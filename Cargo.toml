@@ -1,0 +1,15 @@
+[package]
+name = "fast_dom"
+version = "0.1.0"
+authors = ["Evan Almloff <ealmlof1@stumail.jccc.edu>"]
+edition = "2021"
+
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+wasm-bindgen = { version = "0.2" }
+web-sys = { version = "*", features = ["console", "Window", "Document", "Element", "HtmlElement", "HtmlHeadElement", "Performance"] }
+smallvec = { version = "1.9.0", features = ["const_generics", "const_new"] }
+js-sys = "0.3"
+dioxus-interpreter-js = { path = "c:/users/desktop/github/dioxus/packages/interpreter", features = ["web"] }
