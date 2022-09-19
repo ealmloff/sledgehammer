@@ -1,4 +1,5 @@
 let u8Buf = new Uint8Array();
+let u8BufPos;
 let ptr_ptr;
 let len_ptr;
 
@@ -56,104 +57,164 @@ export function utf8Decode(inputOffset, byteLength) {
     return String.fromCharCode.apply(String, out);
 }
 
-function decodeId(idx) {
-    let id = u8Buf[idx];
+export function asciiDecode(inputOffset, byteLength) {
+    return String.fromCharCode.apply(String, u8Buf.subarray(inputOffset, inputOffset + byteLength));
+}
+
+function decodeId() {
+    let id = u8Buf[u8BufPos];
     if (id === 0) {
+        u8BufPos++;
         return 0;
     }
     for (let i = 1; i < idSize; i++) {
-        id |= u8Buf[idx + i] << (i * 8);
+        id |= u8Buf[u8BufPos + i] << (i * 8);
     }
+    u8BufPos += idSize;
     return id;
 }
 
-
-function decodeU32(idx) {
-    let val = u8Buf[idx];
+function decodePtr(start) {
+    let val = u8Buf[start];
     for (let i = 1; i < 4; i++) {
-        val |= u8Buf[idx + i] << (i * 8);
+        val |= u8Buf[start + i] << (i * 8);
     }
     return val;
 }
 
+function decodeU32() {
+    let val = u8Buf[u8BufPos];
+    for (let i = 1; i < 4; i++) {
+        val |= u8Buf[u8BufPos + i] << (i * 8);
+    }
+    u8BufPos += 4;
+    return val;
+}
+
+function createElement() {
+    let str;
+    const element = u8Buf[u8BufPos++];
+    if (element === 255) {
+        const len = u8Buf[u8BufPos++];
+        const start = u8BufPos++;
+        str = asciiDecode(start, len);
+        u8BufPos = start + len;
+    }
+    else {
+        str = convertElement(element);
+    }
+    return document.createElement(str);
+}
+
+function createFullElement() {
+    const element = createElement();
+    const numAttributes = u8Buf[u8BufPos++];
+    for (let i = 0; i < numAttributes; i++) {
+        const attribute = decodeAttribute();
+        const value = decodeValue();
+        element.setAttribute(attribute, value);
+    }
+    const numChildren = u8Buf[u8BufPos++];
+    for (let i = 0; i < numChildren; i++) {
+        element.appendChild(createFullElement());
+    }
+    return element;
+}
+
+function decodeValue() {
+    const identifier = u8Buf[u8BufPos++];
+    if (identifier === 255) {
+        return true;
+    }
+    else if (identifier === 0) {
+        return false;
+    }
+    else {
+        const start = u8BufPos;
+        u8BufPos = start + identifier;
+        return utf8Decode(start, identifier);
+    }
+}
+
+function decodeAttribute() {
+    const data = u8Buf[u8BufPos++];
+    if (data === 255) {
+        const len = u8Buf[u8BufPos++];
+        const start = u8BufPos++;
+        u8BufPos = start + len;
+        return asciiDecode(start, len);
+    }
+    else {
+        return convertAttribute(data);
+    }
+}
+
 export function work() {
-    let i = decodeU32(ptr_ptr);
-    const end = i + decodeU32(len_ptr);
-    while (i < end) {
-        const op = u8Buf[i];
+    u8BufPos = decodePtr(ptr_ptr);
+    const end = u8BufPos + decodePtr(len_ptr);
+    while (u8BufPos < end) {
+        const op = u8Buf[u8BufPos++];
         switch (op) {
             // push root
             case 0:
                 {
-                    const id = decodeId(i + 1);
+                    const id = decodeId(u8BufPos++);
                     stack.push(id);
-                    i += 1 + idSize;
                 }
                 break;
             // pop root
             case 1:
                 {
                     stack.pop();
-                    i += 1;
                 }
                 break;
             // append children
             case 2:
                 {
-                    const children = u8Buf[i + 1];
+                    const children = u8Buf[u8BufPos++];
                     const parent = stack[stack.length - 1 - children];
                     for (let i = 0; i < children; i++) {
                         parent.appendChild(stack.pop());
                     }
-                    i += 2;
                 }
                 break;
             // replace with
             case 3:
                 {
-                    const id = decodeId(i + 1);
-                    const num = decodeU32(i + 1 + idSize);
+                    const id = decodeId(u8BufPos);
+                    const num = decodeU32(u8BufPos + idSize);
                     nodes[id - 1].replaceWith(...stack.splice(-num));
-                    i += 5 + idSize;
                 }
                 break;
             // insert before
             case 4:
                 {
-                    const id = decodeId(i + 1);
-                    const num = decodeU32(i + 1 + idSize);
+                    const id = decodeId(u8BufPos);
+                    const num = decodeU32(u8BufPos + idSize);
                     nodes[id - 1].before(...stack.splice(-num));
-                    i += 5 + idSize;
                 }
                 break;
             // insert after
             case 5:
                 {
-                    const id = decodeId(i + 1);
-                    const num = decodeU32(i + 1 + idSize);
+                    const id = decodeId(u8BufPos);
+                    const num = decodeU32(u8BufPos + idSize);
                     const splice = stack.splice(-num);
                     nodes[id - 1].after(...splice);
-                    i += 5 + idSize;
                 }
                 break;
             // remove
             case 6:
                 {
-                    const id = decodeId(i + 1);
+                    const id = decodeId(u8BufPos);
                     nodes[id - 1].remove();
                 }
                 break;
             // create text node
             case 7:
                 {
-                    const id = decodeId(i + 1);
-                    if (id === 0) {
-                        i += 2;
-                    }
-                    else {
-                        i += 1 + idSize;
-                    }
-                    const last = document.createTextNode(utf8Decode(i + 1, u8Buf[i]));
+                    const id = decodeId(u8BufPos);
+                    const last = document.createTextNode(utf8Decode(u8BufPos + 1, u8Buf[u8BufPos]));
                     stack.push(last);
                     if (id !== 0) {
                         nodes[id - 1] = last;
@@ -162,56 +223,30 @@ export function work() {
                 break;
             // create element
             case 8:
-                {
-                    let str;
-                    const id = decodeId(i + 1);
-                    if (id === 0) {
-                        i += 2;
-                    }
-                    else {
-                        i += 1 + idSize;
-                    }
-                    const element = u8Buf[i];
-                    if (element === 255) {
-                        const len = u8Buf[i + 1];
-                        const start = i + 2;
-                        str = utf8Decode(start, len);
-                        i = start + len;
-                    }
-                    else {
-                        str = convertElement(element);
-                        i += 1;
-                    }
-                    const last = document.createElement(str);
-                    stack.push(last);
-                    if (id !== 0) {
-                        nodes[id - 1] = last;
-                    }
+                const id = decodeId(u8BufPos);
+                const el = createElement();
+                stack.push(el);
+                if (id !== 0) {
+                    nodes[id - 1] = el;
                 }
                 break;
             // create element ns
             case 9:
                 {
                     let str;
-                    const id = decodeId(i + 1);
-                    if (id === 0) {
-                        i += 2;
-                    }
-                    else {
-                        i += 1 + idSize;
-                    }
-                    const element = u8Buf[i];
+                    const id = decodeId(u8BufPos);
+                    const element = u8Buf[u8BufPos];
                     if (element === 255) {
-                        const len = u8Buf[i + 1];
-                        const start = i + 2;
-                        str = utf8Decode(start, len);
-                        i = start + len;
+                        const len = u8Buf[u8BufPos + 1];
+                        const start = u8BufPos + 2;
+                        str = asciiDecode(start, len);
+                        u8BufPos = start + len;
                     }
                     else {
                         str = convertElement(element);
-                        i += 1;
+                        u8BufPos++;
                     }
-                    const ns = utf8Decode(i + 1, u8Buf[i]);
+                    const ns = asciiDecode(u8BufPos + 1, u8Buf[u8BufPos]);
                     const last = document.createElementNS(ns, str);
                     stack.push(last);
                     if (id !== 0) {
@@ -222,8 +257,7 @@ export function work() {
             // create placeholder
             case 10:
                 {
-                    const id = decodeId(i + 1);
-                    i += 1 + idSize;
+                    const id = decodeId(u8BufPos);
                     const last = document.createElement("pre");
                     last.hidden = true;
                     stack.push(last);
@@ -233,17 +267,17 @@ export function work() {
             // set event listener
             case 11:
                 {
-                    const id = decodeId(i + 1);
-                    const event = u8Buf[i + 1 + idSize];
+                    const id = decodeId(u8BufPos);
+                    const event = u8Buf[u8BufPos];
                     if (event === 255) {
-                        const len = u8Buf[i + 2 + idSize];
-                        const start = i + 3 + idSize;
-                        str = utf8Decode(start, len);
-                        i = start + len;
+                        const len = u8Buf[u8BufPos + 1];
+                        const start = u8BufPos + 2;
+                        str = asciiDecode(start, len);
+                        u8BufPos = start + len;
                     }
                     else {
                         str = convertEvent(event);
-                        i += 2 + idSize;
+                        u8BufPos += 1;
                     }
                     console.log("todo");
                 }
@@ -251,17 +285,17 @@ export function work() {
             // remove event listener
             case 12:
                 {
-                    const id = decodeId(i + 1);
-                    const event = u8Buf[i + 1 + idSize];
+                    const id = decodeId(u8BufPos);
+                    const event = u8Buf[u8BufPos];
                     if (event === 255) {
-                        const len = u8Buf[i + 2 + idSize];
-                        const start = i + 3 + idSize;
-                        str = utf8Decode(start, len);
-                        i = start + len;
+                        const len = u8Buf[u8BufPos + 1];
+                        const start = u8BufPos + 2;
+                        str = asciiDecode(start, len);
+                        u8BufPos = start + len;
                     }
                     else {
                         str = convertEvent(event);
-                        i += 2 + idSize;
+                        u8BufPos++;
                     }
                     console.log("todo");
                 }
@@ -269,48 +303,16 @@ export function work() {
             // set text
             case 13:
                 {
-                    const id = decodeId(i + 1);
-                    i += 1 + idSize;
-                    nodes[id - 1].textContent = utf8Decode(i + 1, u8Buf[i]);
+                    const id = decodeId(u8BufPos);
+                    nodes[id - 1].textContent = utf8Decode(u8BufPos + 1, u8Buf[u8BufPos]);
                 }
                 break;
             // set attribute
             case 14:
                 {
-                    let attr;
-                    const id = decodeId(i + 1);
-                    if (id === 0) {
-                        i += 2;
-                    }
-                    else {
-                        i += 1 + idSize;
-                    }
-                    const data = u8Buf[i];
-                    if (data === 255) {
-                        const len = u8Buf[i + 1];
-                        const start = i + 2;
-                        attr = utf8Decode(start, len);
-                        i = start + len;
-                    }
-                    else {
-                        attr = convertAttribute(data);
-                        i += 1;
-                    }
-                    const identifier = u8Buf[i];
-                    let val;
-                    if (identifier === 255) {
-                        val = true;
-                        i += 1;
-                    }
-                    else if (identifier === 0) {
-                        val = false;
-                        i += 1;
-                    }
-                    else {
-                        const start = i + 1;
-                        val = utf8Decode(start, identifier);
-                        i = start + identifier;
-                    }
+                    const id = decodeId(u8BufPos);
+                    const attr = decodeAttribute();
+                    const val = decodeValue();
                     if (id === 0) {
                         stack[stack.length - 1].setAttribute(attr, val);
                     }
@@ -323,18 +325,17 @@ export function work() {
             case 15:
                 {
                     let attr;
-                    const id = decodeId(i + 1);
-                    i += 1 + idSize;
-                    const data = u8Buf[i];
+                    const id = decodeId(u8BufPos);
+                    const data = u8Buf[u8BufPos];
                     if (data === 255) {
-                        const len = u8Buf[i + 1];
-                        const start = i + 2;
-                        attr = utf8Decode(start, len);
-                        i = start + len;
+                        const len = u8Buf[u8BufPos + 1];
+                        const start = u8BufPos + 2;
+                        attr = asciiDecode(start, len);
+                        u8BufPos = start + len;
                     }
                     else {
                         attr = convertAttribute(data);
-                        i += 1;
+                        u8BufPos += 1;
                     }
                     nodes[id - 1].removeAttribute(attr);
                 }
@@ -343,34 +344,39 @@ export function work() {
             case 16:
                 {
                     let attr;
-                    const id = decodeId(i + 1);
-                    i += 1 + idSize;
-                    const data = u8Buf[i];
+                    const id = decodeId(u8BufPos);
+                    const data = u8Buf[u8BufPos];
                     if (data === 255) {
-                        const len = u8Buf[i + 1];
-                        const start = i + 2;
-                        attr = utf8Decode(start, len);
-                        i = start + len;
+                        const len = u8Buf[u8BufPos + 1];
+                        const start = u8BufPos + 2;
+                        attr = asciiDecode(start, len);
+                        u8BufPos = start + len;
                     }
                     else {
                         attr = convertAttribute(data);
-                        i += 2;
+                        u8BufPos += 1;
                     }
-                    let len = u8Buf[i];
-                    const ns = utf8Decode(i + 1, len);
-                    i += 1 + len;
+                    let len = u8Buf[u8BufPos];
+                    const ns = asciiDecode(u8BufPos + 1, len);
+                    u8BufPos += 1 + len;
                     nodes[id - 1].removeAttributeNS(ns, attr);
                 }
                 break;
             // set the id size
             case 17:
                 {
-                    idSize = u8Buf[i + 1];
-                    i += 2;
+                    idSize = u8Buf[u8BufPos++];
+                }
+                break;
+            // create full element
+            case 18:
+                {
+                    createFullElement();
                 }
                 break;
             default:
-                console.log(`unknown opcode ${u8Buf[i]}`);
+                u8BufPos--;
+                console.log(`unknown opcode ${u8Buf[u8BufPos]}`);
                 return;
         }
     }
@@ -552,7 +558,6 @@ const attrs = [
     "crossorigin",
     "csp",
     "data",
-    "data-*",
     "datetime",
     "decoding",
     "default",
@@ -887,8 +892,8 @@ function convertEvent(id) {
 }
 
 export function bench() {
-    const batch = 1000;
-    const elements = 100;
+    const batch = 100000;
+    const elements = 1;
     {
         let sum = 0;
         for (let i = 0; i < batch; i++) {
@@ -899,9 +904,8 @@ export function bench() {
                 let div = document.createElement("div");
                 block.setAttribute("class", "test");
                 block.appendChild(div);
-                block.removeAttribute("hidden");
                 let input = document.createElement("input");
-                block.after(input);
+                block.appendChild(input);
             }
             const n = performance.now();
             sum += n - o;
