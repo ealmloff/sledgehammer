@@ -36,6 +36,8 @@ extern "C" {
 
     fn bench();
 
+    fn bench_template();
+
     fn prep();
 }
 
@@ -118,11 +120,12 @@ fn bench_msg_element_builder(perf: &Performance) {
                 ElementBuilder<Element, (), ()>,
             ),
         > = ElementBuilder::new(
+            None,
             Element::blockquote,
             ((Attribute::hidden, true),),
             (
-                ElementBuilder::new(Element::div, ((Attribute::class, &"test"),), ()),
-                ElementBuilder::new(Element::input, (), ()),
+                ElementBuilder::new(None, Element::div, ((Attribute::class, &"test"),), ()),
+                ElementBuilder::new(None, Element::input, (), ()),
             ),
         );
         let start = perf.now();
@@ -139,37 +142,102 @@ fn bench_msg_element_builder(perf: &Performance) {
 
 fn bench_msg_element_builder_prealoc(perf: &Performance) {
     let mut sum = 0.0;
+    const EL: ElementBuilder<
+        Element,
+        ((Attribute, bool),),
+        (
+            ElementBuilder<Element, ((Attribute, &&str),), ()>,
+            ElementBuilder<Element, (), ()>,
+        ),
+    > = ElementBuilder::new(
+        None,
+        Element::blockquote,
+        ((Attribute::hidden, true),),
+        (
+            ElementBuilder::new(None, Element::div, ((Attribute::class, &"test"),), ()),
+            ElementBuilder::new(None, Element::input, (), ()),
+        ),
+    );
     for _ in 0..BATCHES {
         prep();
-        const EL: ElementBuilder<
-            Element,
-            ((Attribute, bool),),
-            (
-                ElementBuilder<Element, ((Attribute, &&str),), ()>,
-                ElementBuilder<Element, (), ()>,
-            ),
-        > = ElementBuilder::new(
-            Element::blockquote,
-            ((Attribute::hidden, true),),
-            (
-                ElementBuilder::new(Element::div, ((Attribute::class, &"test"),), ()),
-                ElementBuilder::new(Element::input, (), ()),
-            ),
-        );
         let start = perf.now();
-        let vec = Vec::with_capacity((EL.size() + 1) * ELEMENTS);
-        let mut msg = MsgBuilder::with(vec);
         for _ in 0..ELEMENTS {
-            msg.create_full_element(EL);
+            EL.build();
         }
-        msg.build();
         let end = perf.now();
-        assert_eq!(msg.buf.len(), (EL.size() + 1) * ELEMENTS);
         sum += end - start;
     }
     console::log_1(
         &format!(
             "{} msg.create_element builder prealoc",
+            sum / BATCHES as f64
+        )
+        .into(),
+    );
+}
+
+fn bench_msg_element_builder_clone(perf: &Performance) {
+    let mut sum = 0.0;
+    const EL: ElementBuilder<
+        Element,
+        ((Attribute, bool),),
+        (
+            ElementBuilder<Element, ((Attribute, &&str),), ()>,
+            ElementBuilder<Element, (), ()>,
+        ),
+    > = ElementBuilder::new(
+        None,
+        Element::blockquote,
+        ((Attribute::hidden, true),),
+        (
+            ElementBuilder::new(Some(1), Element::div, ((Attribute::class, &"test"),), ()),
+            ElementBuilder::new(None, Element::input, (), ()),
+        ),
+    );
+    EL.create_template(1);
+    for _ in 0..BATCHES {
+        prep();
+        let start = perf.now();
+        let vec = Vec::with_capacity(3 * ELEMENTS);
+        let mut msg = MsgBuilder::with(vec);
+        for _ in 0..ELEMENTS {
+            msg.create_template_ref(1, ID);
+        }
+        msg.build();
+        let end = perf.now();
+        sum += end - start;
+    }
+    console::log_1(&format!("{} msg.create_element builder clone", sum / BATCHES as f64).into());
+}
+
+fn bench_msg_element_builder_create_template(perf: &Performance) {
+    let mut sum = 0.0;
+    const EL: ElementBuilder<
+        Element,
+        ((Attribute, bool),),
+        (
+            ElementBuilder<Element, ((Attribute, &&str),), ()>,
+            ElementBuilder<Element, (), ()>,
+        ),
+    > = ElementBuilder::new(
+        None,
+        Element::blockquote,
+        ((Attribute::hidden, true),),
+        (
+            ElementBuilder::new(Some(1), Element::div, ((Attribute::class, &"test"),), ()),
+            ElementBuilder::new(None, Element::input, (), ()),
+        ),
+    );
+    for _ in 0..BATCHES {
+        prep();
+        let start = perf.now();
+        EL.create_template(1);
+        let end = perf.now();
+        sum += end - start;
+    }
+    console::log_1(
+        &format!(
+            "{} msg.create_element builder create template",
             sum / BATCHES as f64
         )
         .into(),
@@ -324,6 +392,26 @@ fn bench_create_element(doc: &Document, perf: &Performance) {
     console::log_1(&format!("{} create_element (web-sys)", sum / BATCHES as f64).into());
 }
 
+fn bench_create_element_clone(doc: &Document, perf: &Performance) {
+    let block = doc.create_element("blockquote").unwrap();
+    block.set_attribute("hidden", "true").unwrap();
+    let div = doc.create_element("div").unwrap();
+    div.set_attribute("class", "test").unwrap();
+    let input = doc.create_element("input").unwrap();
+    block.append_child(&div).unwrap();
+    block.append_child(&input).unwrap();
+    let mut sum = 0.0;
+    for _ in 0..BATCHES {
+        let start = perf.now();
+        for _ in 0..ELEMENTS {
+            let _ = block.clone_node_with_deep(true).unwrap();
+        }
+        let end = perf.now();
+        sum += end - start;
+    }
+    console::log_1(&format!("{} create_element clone (web-sys)", sum / BATCHES as f64).into());
+}
+
 fn bench_dioxus(doc: &Document, perf: &Performance) {
     let mut sum = 0.0;
     for _ in 0..BATCHES {
@@ -353,14 +441,14 @@ pub fn main() {
     let doc = win.document().unwrap();
     let perf = win.performance().unwrap();
 
-    for _ in 0..3 {
-        bench_dioxus(&doc, &perf);
+    for _ in 0..10 {
+        // bench_dioxus(&doc, &perf);
 
-        bench_hand(&perf);
+        // bench_hand(&perf);
 
-        bench_msg_element(&perf);
+        // bench_msg_element(&perf);
 
-        bench_msg_pre_alloc(&perf);
+        // bench_msg_pre_alloc(&perf);
 
         // bench_msg_element_custom(&perf);
 
@@ -368,12 +456,20 @@ pub fn main() {
 
         // bench_msg_custom_element_alloc(&perf);
 
-        bench_create_element(&doc, &perf);
+        // bench_msg_element_builder(&perf);
 
-        bench_msg_element_builder(&perf);
+        // bench_create_element(&doc, &perf);
 
-        bench_msg_element_builder_prealoc(&perf);
+        // bench_msg_element_builder_prealoc(&perf);
 
-        bench();
+        // bench_create_element_clone(&doc, &perf);
+
+        // bench_msg_element_builder_clone(&perf);
+
+        bench_msg_element_builder_create_template(&perf);
+
+        // bench();
+
+        // bench_template();
     }
 }

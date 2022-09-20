@@ -4,7 +4,7 @@ use std::ops::RangeInclusive;
 
 use crate::{
     attribute::ManyAttrs,
-    builder::{encode_str, VecLike},
+    builder::{encode_str, MsgBuilder, VecLike},
 };
 
 pub trait IntoElement {
@@ -40,9 +40,10 @@ impl<S: AsRef<str>> IntoElement for S {
 }
 
 pub trait ManyElements {
-    fn size(&self) -> usize;
+    fn size(&self, id_size: u8) -> usize;
     fn len(&self) -> usize;
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V);
+    fn encode<V: VecLike<Item = u8>>(self, v: &mut V, id_size: u8);
+    fn max_id_size(&self) -> u8;
 }
 
 impl ManyElements for () {
@@ -50,30 +51,42 @@ impl ManyElements for () {
         0
     }
 
-    fn size(&self) -> usize {
+    fn size(&self, _: u8) -> usize {
         0
     }
 
-    fn encode<V: VecLike<Item = u8>>(self, _: &mut V) {}
+    fn encode<V: VecLike<Item = u8>>(self, v: &mut V, _: u8) {
+        v.add_element(<Self as ManyElements>::len(&self) as u8);
+    }
+
+    fn max_id_size(&self) -> u8 {
+        0
+    }
 }
 
 macro_rules! impl_many_elements {
     (( $( ($t:ident, $i:ident) ),+ )) => {
         impl< $($t),+ > ManyElements for ($($t,)+)
             where $($t: ElementBuilderExt),+ {
-            fn size(&self) -> usize {
+            fn size(&self, id_size: u8) -> usize {
                 let ($($i,)+) = self;
-                0 $(+ $i.size())*
+                0 $(+ $i.size(id_size))*
             }
 
             fn len(&self) -> usize {
                 let ($($i,)+) = self;
-                0 $(+ 1+ 0*$i.size())*
+                0 $(+ 1+ 0*$i.size(0))*
             }
 
-            fn encode<V: VecLike<Item = u8>>(self, v: &mut V) {
+            fn encode<V: VecLike<Item = u8>>(self, v: &mut V, id_size: u8) {
+                v.add_element(self.len() as u8);
                 let ($($i,)+) = self;
-                $($i.encode(v);)+
+                $($i.encode(v, id_size);)+
+            }
+
+            fn max_id_size(&self) -> u8 {
+                let ($($i,)+) = self;
+                [$($i.max_id_size(),)*].iter().max().copied().unwrap_or_default()
             }
         }
     };
@@ -142,14 +155,20 @@ impl_many_elements!((
 ));
 
 pub struct ElementBuilder<K: IntoElement, A: ManyAttrs, E: ManyElements> {
+    id: Option<[u8; 8]>,
     kind: K,
     attrs: A,
     children: E,
 }
 
 impl<K: IntoElement, A: ManyAttrs, E: ManyElements> ElementBuilder<K, A, E> {
-    pub const fn new(kind: K, attrs: A, children: E) -> Self {
+    pub const fn new(id: Option<u64>, kind: K, attrs: A, children: E) -> Self {
         Self {
+            id: if let Some(id) = id {
+                Some(id.to_le_bytes())
+            } else {
+                None
+            },
             kind,
             attrs,
             children,
@@ -158,21 +177,60 @@ impl<K: IntoElement, A: ManyAttrs, E: ManyElements> ElementBuilder<K, A, E> {
 }
 
 pub trait ElementBuilderExt {
-    fn size(&self) -> usize;
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V);
+    fn size(&self, id_size: u8) -> usize;
+    fn encode<V: VecLike<Item = u8>>(self, v: &mut V, id_size: u8);
+    fn build(self);
+    fn create_template(self, id: u64);
+    fn max_id_size(&self) -> u8;
 }
 
 impl<K: IntoElement, A: ManyAttrs, E: ManyElements> ElementBuilderExt for ElementBuilder<K, A, E> {
-    fn size(&self) -> usize {
-        2 + self.kind.size() + self.attrs.size() + self.children.size()
+    fn size(&self, id_size: u8) -> usize {
+        2 + self.kind.size()
+            + self.attrs.size()
+            + self.children.size(id_size)
+            + if let Some(_) = self.id {
+                id_size as usize
+            } else {
+                1
+            }
     }
 
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V) {
+    fn encode<V: VecLike<Item = u8>>(self, v: &mut V, id_size: u8) {
+        if let Some(id) = self.id {
+            v.extend_slice(&id[..id_size as usize]);
+        } else {
+            v.add_element(0);
+        }
         self.kind.encode(v);
-        v.add_element(self.attrs.len() as u8);
         self.attrs.encode(v);
-        v.add_element(self.children.len() as u8);
-        self.children.encode(v);
+        self.children.encode(v, id_size);
+    }
+
+    fn create_template(self, id: u64) {
+        let id_size = self.max_id_size();
+        let v = Vec::with_capacity(self.size(id_size) + 1);
+        let mut msg = MsgBuilder::with(v);
+        msg.create_template((self,), id);
+        msg.build();
+    }
+
+    fn build(self) {
+        let id_size = self.max_id_size();
+        let v = Vec::with_capacity(self.size(id_size) + 1);
+        let mut msg = MsgBuilder::with(v);
+        msg.create_full_element(self);
+        msg.build();
+    }
+
+    fn max_id_size(&self) -> u8 {
+        if let Some(id) = self.id {
+            let first_contentful_byte = id.iter().rev().position(|&b| b != 0).unwrap_or(id.len());
+            let contentful_size = (id.len() - first_contentful_byte) as u8;
+            contentful_size.max(self.children.max_id_size())
+        } else {
+            self.children.max_id_size()
+        }
     }
 }
 
@@ -226,9 +284,9 @@ pub enum Element {
     form,
     frame,
     frameset,
+    h1,
     head,
     header,
-    h1,
     hgroup,
     hr,
     html,

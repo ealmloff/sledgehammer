@@ -40,7 +40,9 @@ impl ManyAttrs for () {
         0
     }
 
-    fn encode<V: VecLike<Item = u8>>(self, _: &mut V) {}
+    fn encode<V: VecLike<Item = u8>>(self, v: &mut V) {
+        v.add_element(<Self as ManyAttrs>::len(&self) as u8);
+    }
 
     #[inline]
     fn size(&self) -> usize {
@@ -64,6 +66,7 @@ macro_rules! impl_many_attrs {
             }
 
             fn encode<V: VecLike<Item = u8>>(self, v: &mut V) {
+                v.add_element(self.len() as u8);
                 let ($(($i, $m),)+) = self;
                 $($i.encode(v);$m.encode(v);)+
             }
@@ -156,13 +159,35 @@ impl_many_attrs!(
 );
 
 pub enum Attribute {
-    accept,
     accept_charset,
+    accept,
     accesskey,
     action,
     align,
     allow,
     alt,
+    aria_atomic,
+    aria_busy,
+    aria_controls,
+    aria_current,
+    aria_describedby,
+    aria_description,
+    aria_details,
+    aria_disabled,
+    aria_dropeffect,
+    aria_errormessage,
+    aria_flowto,
+    aria_grabbed,
+    aria_haspopup,
+    aria_hidden,
+    aria_invalid,
+    aria_keyshortcuts,
+    aria_label,
+    aria_labelledby,
+    aria_live,
+    aria_owns,
+    aria_relevant,
+    aria_roledescription,
     r#async,
     autocapitalize,
     autocomplete,

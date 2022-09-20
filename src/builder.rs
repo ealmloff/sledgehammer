@@ -1,11 +1,10 @@
-use std::borrow::BorrowMut;
-
 use smallvec::SmallVec;
-use web_sys::Node;
+use std::fmt::Debug;
+use web_sys::{console, Node};
 
 use crate::{
     attribute::IntoAttribue,
-    element::{ElementBuilderExt, IntoElement},
+    element::{ElementBuilderExt, IntoElement, ManyElements},
     event::IntoEvent,
     set_node,
     value::IntoValue,
@@ -104,19 +103,25 @@ enum Op {
     RemoveAttributeNs = 16,
     SetIdSize = 17,
     CreateFullElement = 18,
+    CreateTemplate = 19,
+    CreateTemplateRef = 20,
 }
 
-impl<V: VecLike<Item = u8> + AsRef<[u8]>> MsgBuilder<V> {
+impl<V: VecLike<Item = u8> + AsRef<[u8]> + Debug> MsgBuilder<V> {
     pub fn create_full_element(&mut self, builder: impl ElementBuilderExt) {
         self.buf.add_element(Op::CreateFullElement as u8);
-        builder.encode(&mut self.buf);
+        builder.encode(&mut self.buf, self.id_size);
     }
 
     pub fn check_id(&mut self, id: [u8; 8]) {
         let first_contentful_byte = id.iter().rev().position(|&b| b != 0).unwrap_or(id.len());
         let contentful_size = id.len() - first_contentful_byte;
-        if contentful_size > self.id_size as usize {
-            self.set_id_size(contentful_size as u8);
+        self.check_id_size(contentful_size as u8);
+    }
+
+    pub fn check_id_size(&mut self, size: u8) {
+        if size > self.id_size {
+            self.set_id_size(size);
         }
     }
 
@@ -301,6 +306,34 @@ impl<V: VecLike<Item = u8> + AsRef<[u8]>> MsgBuilder<V> {
         let contentful_id = &id[..self.id_size as usize];
         self.buf.extend_slice(contentful_id);
         encode_str(&mut self.buf, text);
+    }
+
+    pub fn create_template(&mut self, builder: impl ManyElements, id: u64) {
+        let id = id.to_le_bytes();
+        self.check_id(id);
+        self.check_id_size(builder.max_id_size());
+        self.buf.add_element(Op::CreateTemplate as u8);
+        let contentful_id = &id[..self.id_size as usize];
+        self.buf.extend_slice(contentful_id);
+        builder.encode(&mut self.buf, self.id_size);
+    }
+
+    pub fn create_template_ref(&mut self, template_id: u64, node_id: Option<u64>) {
+        let template_id = template_id.to_le_bytes();
+        self.check_id(template_id);
+        let node_id = node_id.map(|id| id.to_le_bytes());
+        if let Some(id) = node_id {
+            self.check_id(id);
+        }
+        self.buf.add_element(Op::CreateTemplateRef as u8);
+        let contentful_id = &template_id[..self.id_size as usize];
+        self.buf.extend_slice(contentful_id);
+        if let Some(id) = node_id {
+            let contentful_id = &id[..self.id_size as usize];
+            self.buf.extend_slice(contentful_id);
+        } else {
+            self.buf.add_element(0);
+        }
     }
 
     pub fn build(&self) {

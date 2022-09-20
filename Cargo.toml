@@ -14,3 +14,8 @@ smallvec = { version = "1.9.0", features = ["const_generics", "const_new"] }
 js-sys = "0.3"
 dioxus-interpreter-js = { path = "c:/users/desktop/github/dioxus/packages/interpreter", features = ["web"] }
 dioxus-core = { git = "https://github.com/dioxuslabs/dioxus" }
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
