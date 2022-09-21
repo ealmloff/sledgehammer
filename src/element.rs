@@ -4,7 +4,7 @@ use std::ops::RangeInclusive;
 
 use crate::{
     attribute::ManyAttrs,
-    builder::{encode_str, MsgBuilder, VecLike},
+    builder::{encode_str, IntoId, MsgBuilder, VecLike},
 };
 
 pub trait IntoElement {
@@ -189,19 +189,11 @@ impl<K: IntoElement, A: ManyAttrs, E: ManyElements> ElementBuilderExt for Elemen
         2 + self.kind.size()
             + self.attrs.size()
             + self.children.size(id_size)
-            + if let Some(_) = self.id {
-                id_size as usize
-            } else {
-                1
-            }
+            + self.id.max_el_size() as usize
     }
 
     fn encode<V: VecLike<Item = u8>>(self, v: &mut V, id_size: u8) {
-        if let Some(id) = self.id {
-            v.extend_slice(&id[..id_size as usize]);
-        } else {
-            v.add_element(0);
-        }
+        self.id.encode(v, id_size);
         self.kind.encode(v);
         self.attrs.encode(v);
         self.children.encode(v, id_size);
@@ -224,13 +216,7 @@ impl<K: IntoElement, A: ManyAttrs, E: ManyElements> ElementBuilderExt for Elemen
     }
 
     fn max_id_size(&self) -> u8 {
-        if let Some(id) = self.id {
-            let first_contentful_byte = id.iter().rev().position(|&b| b != 0).unwrap_or(id.len());
-            let contentful_size = (id.len() - first_contentful_byte) as u8;
-            contentful_size.max(self.children.max_id_size())
-        } else {
-            self.children.max_id_size()
-        }
+        self.id.max_el_size().max(self.children.max_id_size())
     }
 }
 

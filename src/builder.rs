@@ -1,6 +1,6 @@
 use smallvec::SmallVec;
 use std::fmt::Debug;
-use web_sys::{console, Node};
+use web_sys::Node;
 
 use crate::{
     attribute::IntoAttribue,
@@ -113,10 +113,8 @@ impl<V: VecLike<Item = u8> + AsRef<[u8]> + Debug> MsgBuilder<V> {
         builder.encode(&mut self.buf, self.id_size);
     }
 
-    pub fn check_id(&mut self, id: [u8; 8]) {
-        let first_contentful_byte = id.iter().rev().position(|&b| b != 0).unwrap_or(id.len());
-        let contentful_size = id.len() - first_contentful_byte;
-        self.check_id_size(contentful_size as u8);
+    pub fn check_id(&mut self, id: &impl IntoId) {
+        self.check_id_size(id.max_el_size());
     }
 
     pub fn check_id_size(&mut self, size: u8) {
@@ -125,57 +123,31 @@ impl<V: VecLike<Item = u8> + AsRef<[u8]> + Debug> MsgBuilder<V> {
         }
     }
 
-    pub fn create_element(&mut self, element: impl IntoElement, id: Option<u64>) {
-        let id = id.map(|id| id.to_le_bytes());
-        if let Some(id) = id {
-            self.check_id(id);
-        }
+    pub fn create_element(&mut self, element: impl IntoElement, id: impl IntoId) {
+        self.check_id(&id);
         self.buf.add_element(Op::CreateElement as u8);
-        if let Some(id) = id {
-            let contentful_id = &id[..self.id_size as usize];
-            self.buf.extend_slice(contentful_id);
-        } else {
-            self.buf.add_element(0);
-        }
+        id.encode(&mut self.buf, self.id_size);
         element.encode(&mut self.buf);
     }
 
-    pub fn create_element_ns(&mut self, element: impl IntoElement, ns: &str, id: Option<u64>) {
-        let id = id.map(|id| id.to_le_bytes());
-        if let Some(id) = id {
-            self.check_id(id);
-        }
+    pub fn create_element_ns(&mut self, element: impl IntoElement, ns: &str, id: impl IntoId) {
+        self.check_id(&id);
         self.buf.add_element(Op::CreateElementNs as u8);
-        if let Some(id) = id {
-            let contentful_id = &id[..self.id_size as usize];
-            self.buf.extend_slice(contentful_id);
-        } else {
-            self.buf.add_element(0);
-        }
+        id.encode(&mut self.buf, self.id_size);
         element.encode(&mut self.buf);
         encode_str(&mut self.buf, ns);
     }
 
-    pub fn create_placeholder(&mut self, id: u64) {
-        let id = id.to_le_bytes();
-        self.check_id(id);
+    pub fn create_placeholder(&mut self, id: impl IntoId) {
+        self.check_id(&id);
         self.buf.add_element(Op::CreatePlaceholder as u8);
-        let contentful_id = &id[..self.id_size as usize];
-        self.buf.extend_slice(contentful_id);
+        id.encode(&mut self.buf, self.id_size);
     }
 
-    pub fn create_text_node(&mut self, text: &str, id: Option<u64>) {
-        let id = id.map(|id| id.to_le_bytes());
-        if let Some(id) = id {
-            self.check_id(id);
-        }
+    pub fn create_text_node(&mut self, text: &str, id: impl IntoId) {
+        self.check_id(&id);
         self.buf.add_element(Op::CreateTextNode as u8);
-        if let Some(id) = id {
-            let contentful_id = &id[..self.id_size as usize];
-            self.buf.extend_slice(contentful_id);
-        } else {
-            self.buf.add_element(0);
-        }
+        id.encode(&mut self.buf, self.id_size);
         encode_str(&mut self.buf, text);
     }
 
@@ -183,39 +155,26 @@ impl<V: VecLike<Item = u8> + AsRef<[u8]> + Debug> MsgBuilder<V> {
         &mut self,
         attribute: impl IntoAttribue,
         value: impl IntoValue,
-        id: Option<u64>,
+        id: impl IntoId,
     ) {
-        let id = id.map(|id| id.to_le_bytes());
-        if let Some(id) = id {
-            self.check_id(id);
-        }
+        self.check_id(&id);
         self.buf.add_element(Op::SetAttribute as u8);
-        if let Some(id) = id {
-            let contentful_id = &id[..self.id_size as usize];
-            self.buf.extend_slice(contentful_id);
-        } else {
-            self.buf.add_element(0);
-        }
+        id.encode(&mut self.buf, self.id_size);
         attribute.encode(&mut self.buf);
         value.encode(&mut self.buf);
     }
 
-    pub fn remove_attribute(&mut self, attribute: impl IntoAttribue, id: u64) {
-        let id = id.to_le_bytes();
-        self.check_id(id);
+    pub fn remove_attribute(&mut self, attribute: impl IntoAttribue, id: impl IntoId) {
+        self.check_id(&id);
         self.buf.add_element(Op::RemoveAttribute as u8);
-        let contentful_id = &id[..self.id_size as usize];
-        self.buf.extend_slice(contentful_id);
+        id.encode(&mut self.buf, self.id_size);
         attribute.encode(&mut self.buf);
     }
 
-    pub fn remove_attribute_ns(&mut self, attribute: impl IntoAttribue, ns: &str, id: u64) {
-        let id = id.to_le_bytes();
-        self.check_id(id);
+    pub fn remove_attribute_ns(&mut self, attribute: impl IntoAttribue, ns: &str, id: impl IntoId) {
+        self.check_id(&id);
         self.buf.add_element(Op::RemoveAttributeNs as u8);
-        let contentful_id = &id[..self.id_size as usize];
-        self.buf.extend_slice(contentful_id);
-        attribute.encode(&mut self.buf);
+        id.encode(&mut self.buf, self.id_size);
         encode_str(&mut self.buf, ns);
     }
 
@@ -224,59 +183,47 @@ impl<V: VecLike<Item = u8> + AsRef<[u8]> + Debug> MsgBuilder<V> {
         self.buf.add_element(children);
     }
 
-    pub fn push_root(&mut self, id: u64) {
-        let id = id.to_le_bytes();
-        self.check_id(id);
+    pub fn push_root(&mut self, id: impl IntoId) {
+        self.check_id(&id);
         self.buf.add_element(Op::PushRoot as u8);
-        let contentful_id = &id[..self.id_size as usize];
-        self.buf.extend_slice(contentful_id);
+        id.encode(&mut self.buf, self.id_size);
     }
 
     pub fn pop_root(&mut self) {
         self.buf.add_element(Op::PopRoot as u8);
     }
 
-    pub fn insert_after(&mut self, id: u64, num: u32) {
-        let id = id.to_le_bytes();
-        self.check_id(id);
+    pub fn insert_after(&mut self, id: impl IntoId, num: u32) {
+        self.check_id(&id);
         self.buf.add_element(Op::InsertAfter as u8);
-        let contentful_id = &id[..self.id_size as usize];
-        self.buf.extend_slice(contentful_id);
+        id.encode(&mut self.buf, self.id_size);
         self.buf.extend_slice(&num.to_le_bytes());
     }
 
-    pub fn insert_before(&mut self, id: u64, num: u32) {
-        let id = id.to_le_bytes();
-        self.check_id(id);
+    pub fn insert_before(&mut self, id: impl IntoId, num: u32) {
+        self.check_id(&id);
         self.buf.add_element(Op::InsertBefore as u8);
-        let contentful_id = &id[..self.id_size as usize];
-        self.buf.extend_slice(contentful_id);
+        id.encode(&mut self.buf, self.id_size);
         self.buf.extend_slice(&num.to_le_bytes());
     }
 
-    pub fn remove(&mut self, id: u64) {
-        let id = id.to_le_bytes();
-        self.check_id(id);
+    pub fn remove(&mut self, id: impl IntoId) {
+        self.check_id(&id);
         self.buf.add_element(Op::Remove as u8);
-        let contentful_id = &id[..self.id_size as usize];
-        self.buf.extend_slice(contentful_id);
+        id.encode(&mut self.buf, self.id_size);
     }
 
-    pub fn set_event_listener(&mut self, event: impl IntoEvent, id: u64) {
-        let id = id.to_le_bytes();
-        self.check_id(id);
+    pub fn set_event_listener(&mut self, event: impl IntoEvent, id: impl IntoId) {
+        self.check_id(&id);
         self.buf.add_element(Op::SetEventListener as u8);
-        let contentful_id = &id[..self.id_size as usize];
-        self.buf.extend_slice(contentful_id);
+        id.encode(&mut self.buf, self.id_size);
         event.encode(&mut self.buf);
     }
 
-    pub fn remove_event_listener(&mut self, event: impl IntoEvent, id: u64) {
-        let id = id.to_le_bytes();
-        self.check_id(id);
+    pub fn remove_event_listener(&mut self, event: impl IntoEvent, id: impl IntoId) {
+        self.check_id(&id);
         self.buf.add_element(Op::RemoveEventListener as u8);
-        let contentful_id = &id[..self.id_size as usize];
-        self.buf.extend_slice(contentful_id);
+        id.encode(&mut self.buf, self.id_size);
         event.encode(&mut self.buf);
     }
 
@@ -290,54 +237,127 @@ impl<V: VecLike<Item = u8> + AsRef<[u8]> + Debug> MsgBuilder<V> {
         set_node(id, node);
     }
 
-    pub fn replace_with(&mut self, id: u64, num: u32) {
-        let id = id.to_le_bytes();
-        self.check_id(id);
+    pub fn replace_with(&mut self, id: impl IntoId, num: u32) {
+        self.check_id(&id);
         self.buf.add_element(Op::ReplaceWith as u8);
-        let contentful_id = &id[..self.id_size as usize];
-        self.buf.extend_slice(contentful_id);
+        id.encode(&mut self.buf, self.id_size);
         self.buf.extend_slice(&num.to_le_bytes());
     }
 
-    pub fn set_text(&mut self, id: u64, text: &str) {
-        let id = id.to_le_bytes();
-        self.check_id(id);
+    pub fn set_text(&mut self, id: impl IntoId, text: &str) {
+        self.check_id(&id);
         self.buf.add_element(Op::SetText as u8);
-        let contentful_id = &id[..self.id_size as usize];
-        self.buf.extend_slice(contentful_id);
+        id.encode(&mut self.buf, self.id_size);
         encode_str(&mut self.buf, text);
     }
 
-    pub fn create_template(&mut self, builder: impl ManyElements, id: u64) {
-        let id = id.to_le_bytes();
-        self.check_id(id);
+    pub fn create_template(&mut self, builder: impl ManyElements, id: impl IntoId) {
+        self.check_id(&id);
         self.check_id_size(builder.max_id_size());
         self.buf.add_element(Op::CreateTemplate as u8);
-        let contentful_id = &id[..self.id_size as usize];
-        self.buf.extend_slice(contentful_id);
+        id.encode(&mut self.buf, self.id_size);
         builder.encode(&mut self.buf, self.id_size);
     }
 
-    pub fn create_template_ref(&mut self, template_id: u64, node_id: Option<u64>) {
-        let template_id = template_id.to_le_bytes();
-        self.check_id(template_id);
-        let node_id = node_id.map(|id| id.to_le_bytes());
-        if let Some(id) = node_id {
-            self.check_id(id);
-        }
+    pub fn create_template_ref(&mut self, template_id: impl IntoId, node_id: impl IntoId) {
+        self.check_id(&template_id);
+        self.check_id(&node_id);
         self.buf.add_element(Op::CreateTemplateRef as u8);
-        let contentful_id = &template_id[..self.id_size as usize];
-        self.buf.extend_slice(contentful_id);
-        if let Some(id) = node_id {
-            let contentful_id = &id[..self.id_size as usize];
-            self.buf.extend_slice(contentful_id);
-        } else {
-            self.buf.add_element(0);
-        }
+        template_id.encode(&mut self.buf, self.id_size);
+        node_id.encode(&mut self.buf, self.id_size);
     }
 
     pub fn build(&self) {
         work(self.buf.as_ref())
+    }
+}
+
+pub trait IntoId {
+    fn size(&self, id_size: u8) -> u8;
+    fn max_el_size(&self) -> u8;
+    fn encode<V: VecLike<Item = u8>>(self, v: &mut V, id_size: u8);
+}
+
+impl IntoId for u64 {
+    fn size(&self, id_size: u8) -> u8 {
+        id_size
+    }
+
+    fn max_el_size(&self) -> u8 {
+        self.to_le_bytes().max_el_size()
+    }
+
+    fn encode<V: VecLike<Item = u8>>(self, v: &mut V, id_size: u8) {
+        self.to_le_bytes().encode(v, id_size)
+    }
+}
+
+impl IntoId for [u8; 8] {
+    fn size(&self, id_size: u8) -> u8 {
+        id_size
+    }
+
+    fn max_el_size(&self) -> u8 {
+        let first_contentful_byte = self.iter().rev().position(|&b| b != 0).unwrap_or(8);
+        (8 - first_contentful_byte) as u8
+    }
+
+    fn encode<V: VecLike<Item = u8>>(self, v: &mut V, id_size: u8) {
+        v.add_element(1);
+        v.extend_slice(&self[..id_size as usize]);
+    }
+}
+
+impl IntoId for Option<u64> {
+    fn size(&self, id_size: u8) -> u8 {
+        self.map_or(1, |id| id.size(id_size))
+    }
+
+    fn max_el_size(&self) -> u8 {
+        self.map(|id| id.max_el_size()).unwrap_or(0)
+    }
+
+    fn encode<V: VecLike<Item = u8>>(self, v: &mut V, id_size: u8) {
+        if let Some(id) = self {
+            id.encode(v, id_size);
+        } else {
+            v.add_element(0);
+        }
+    }
+}
+
+impl IntoId for Option<[u8; 8]> {
+    fn size(&self, id_size: u8) -> u8 {
+        self.map_or(1, |id| id.size(id_size))
+    }
+
+    fn max_el_size(&self) -> u8 {
+        self.map(|id| id.max_el_size()).unwrap_or(0)
+    }
+
+    fn encode<V: VecLike<Item = u8>>(self, v: &mut V, id_size: u8) {
+        if let Some(id) = self {
+            id.encode(v, id_size);
+        } else {
+            v.add_element(0);
+        }
+    }
+}
+
+impl IntoId for (u64, u64) {
+    fn size(&self, id_size: u8) -> u8 {
+        self.0.size(id_size) + self.1.size(id_size)
+    }
+
+    fn max_el_size(&self) -> u8 {
+        self.0.max_el_size().max(self.1.max_el_size())
+    }
+
+    fn encode<V: VecLike<Item = u8>>(self, v: &mut V, id_size: u8) {
+        v.add_element(2);
+        let (id1, id2) = (self.0.to_le_bytes(), self.1.to_le_bytes());
+        v.extend_slice(&id1[..id_size as usize]);
+        v.extend_slice(&id2[..id_size as usize]);
     }
 }
 

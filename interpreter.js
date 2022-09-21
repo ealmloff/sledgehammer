@@ -6,33 +6,44 @@ let ptr_ptr;
 let len_ptr;
 
 class TemplateRef {
-    constructor(fragment, dynamicNodePaths, roots, id) {
+    constructor(fragment, dynamicNodePaths, id) {
         this.fragment = fragment;
         this.dynamicNodePaths = dynamicNodePaths;
         this.id = id;
         this.placed = false;
-        this.roots = roots;
+        this.roots = [];
         this.nodes = [];
     }
 
-    build(id) {
-        if (!this.nodes[id]) {
-            let current = this.fragment;
-            const path = this.dynamicNodePaths[id];
-            for (let i = 0; i < path.length; i++) {
-                const idx = path[i];
-                current = current.firstChild;
-                for (let i2 = 0; i2 < idx; i2++) {
-                    current = current.nextSibling;
-                }
-            }
-            this.nodes[id] = current;
+    buildRoots() {
+        let i = 0;
+        for (let node = this.fragment.firstChild; node != null; node = node.nextSibling) {
+            this.roots[i++] = node;
         }
     }
 
+    build(id) {
+        let current = this.fragment;
+        const path = this.dynamicNodePaths[id];
+        for (let i = 0; i < path.length; i++) {
+            const idx = path[i];
+            current = current.firstChild;
+            for (let i2 = 0; i2 < idx; i2++) {
+                current = current.nextSibling;
+            }
+        }
+        this.nodes[id] = current;
+    }
+
     get(id) {
-        this.build(id);
-        return this.nodes[id];
+        const intial = this.nodes[id];
+        if (!intial) {
+            this.build(id);
+            return this.nodes[id];
+        }
+        else {
+            return intial;
+        }
     }
 
     parent() {
@@ -62,6 +73,7 @@ class TemplateRef {
         else {
             this.move();
         }
+        this.buildRoots();
         return this.fragment;
     }
 }
@@ -71,16 +83,7 @@ class Template {
         this.nodes = [];
         this.dynamicNodePaths = [];
         this.template = null;
-        this.roots = [];
         this.currentPath = [];
-    }
-
-    finalize() {
-        let i = 0;
-        for (let node = this.template.content.firstChild; node != null; node = node.nextSibling) {
-            this.roots[i] = node;
-            i++;
-        }
     }
 
     ref(id) {
@@ -90,7 +93,12 @@ class Template {
 }
 
 export function get(id) {
-    return u8Buf[id];
+    if (id.length) {
+        return nodes[id[0] - 1].get(id[1]);
+    }
+    else {
+        return nodes[id - 1];
+    }
 }
 
 export function interperter_init(mem, _ptr_ptr, _len_ptr) {
@@ -111,23 +119,27 @@ let stack = [];
 let idSize = 1;
 let nodes = [];
 
-export function utf8Decode(byteLength) {
+export function set_node(id, node) {
+    nodes[id - BigInt(1)] = node;
+}
+
+function utf8Decode(byteLength) {
     const end = u8BufPos + byteLength;
-    const out = [];
+    let out = "";
     while (u8BufPos < end) {
         const byte1 = u8Buf[u8BufPos++];
         if ((byte1 & 0x80) === 0) {
             // 1 byte
-            out.push(byte1);
+            out += String.fromCharCode(byte1);
         } else if ((byte1 & 0xe0) === 0xc0) {
             // 2 bytes
             const byte2 = u8Buf[u8BufPos++] & 0x3f;
-            out.push(((byte1 & 0x1f) << 6) | byte2);
+            out += String.fromCharCode(((byte1 & 0x1f) << 6) | byte2);
         } else if ((byte1 & 0xf0) === 0xe0) {
             // 3 bytes
             const byte2 = u8Buf[u8BufPos++] & 0x3f;
             const byte3 = u8Buf[u8BufPos++] & 0x3f;
-            out.push(((byte1 & 0x1f) << 12) | (byte2 << 6) | byte3);
+            out += String.fromCharCode(((byte1 & 0x1f) << 12) | (byte2 << 6) | byte3);
         } else if ((byte1 & 0xf8) === 0xf0) {
             // 4 bytes
             const byte2 = u8Buf[u8BufPos++] & 0x3f;
@@ -136,19 +148,19 @@ export function utf8Decode(byteLength) {
             let unit = ((byte1 & 0x07) << 0x12) | (byte2 << 0x0c) | (byte3 << 0x06) | byte4;
             if (unit > 0xffff) {
                 unit -= 0x10000;
-                out.push(((unit >>> 10) & 0x3ff) | 0xd800);
+                out += String.fromCharCode(((unit >>> 10) & 0x3ff) | 0xd800);
                 unit = 0xdc00 | (unit & 0x3ff);
             }
-            out.push(unit);
+            out += String.fromCharCode(unit);
         } else {
-            out.push(byte1);
+            out += String.fromCharCode(byte1);
         }
     }
 
-    return String.fromCharCode.apply(String, out);
+    return out;
 }
 
-export function asciiDecode(byteLength) {
+function asciiDecode(byteLength) {
     const end = u8BufPos + byteLength;
     let out = "";
     while (u8BufPos < end) {
@@ -158,16 +170,31 @@ export function asciiDecode(byteLength) {
 }
 
 function decodeId() {
-    let id = u8Buf[u8BufPos];
-    if (id === 0) {
-        u8BufPos++;
+    const id_code = u8Buf[u8BufPos++];
+    if (id_code === 0) {
         return 0;
     }
-    for (let i = 1; i < idSize; i++) {
-        id |= u8Buf[u8BufPos + i] << (i * 8);
+    else if (id_code === 1) {
+        let id = u8Buf[u8BufPos];
+        for (let i = 1; i < idSize; i++) {
+            id |= u8Buf[u8BufPos + i] << (i * 8);
+        }
+        u8BufPos += idSize;
+        return id;
     }
-    u8BufPos += idSize;
-    return id;
+    else if (id_code === 2) {
+        let template_id = u8Buf[u8BufPos];
+        for (let i = 1; i < idSize; i++) {
+            template_id |= u8Buf[u8BufPos + i] << (i * 8);
+        }
+        u8BufPos += idSize;
+        let node_id = u8Buf[u8BufPos];
+        for (let i = 1; i < idSize; i++) {
+            node_id |= u8Buf[u8BufPos + i] << (i * 8);
+        }
+        u8BufPos += idSize;
+        return [template_id, node_id];
+    }
 }
 
 function decodePtr(start) {
@@ -293,7 +320,7 @@ export function work() {
                 {
                     const id = decodeId();
                     const num = decodeU32(u8BufPos + idSize);
-                    nodes[id - 1].replaceWith(...stack.splice(-num));
+                    get(id).replaceWith(...stack.splice(-num));
                 }
                 break;
             // insert before
@@ -301,7 +328,7 @@ export function work() {
                 {
                     const id = decodeId();
                     const num = decodeU32(u8BufPos + idSize);
-                    nodes[id - 1].before(...stack.splice(-num));
+                    get(id).before(...stack.splice(-num));
                 }
                 break;
             // insert after
@@ -310,14 +337,14 @@ export function work() {
                     const id = decodeId();
                     const num = decodeU32(u8BufPos + idSize);
                     const splice = stack.splice(-num);
-                    nodes[id - 1].after(...splice);
+                    get(id).after(...splice);
                 }
                 break;
             // remove
             case 6:
                 {
                     const id = decodeId();
-                    nodes[id - 1].remove();
+                    get(id).remove();
                 }
                 break;
             // create text node
@@ -405,7 +432,7 @@ export function work() {
             case 13:
                 {
                     const id = decodeId();
-                    nodes[id - 1].textContent = utf8Decode(u8Buf[u8BufPos++]);
+                    get(id).textContent = utf8Decode(u8Buf[u8BufPos++]);
                 }
                 break;
             // set attribute
@@ -418,7 +445,7 @@ export function work() {
                         stack[stack.length - 1].setAttribute(attr, val);
                     }
                     else {
-                        nodes[id - 1].setAttribute(attr, val);
+                        get(id).setAttribute(attr, val);
                     }
                 }
                 break;
@@ -435,7 +462,7 @@ export function work() {
                     else {
                         attr = convertAttribute(data);
                     }
-                    nodes[id - 1].removeAttribute(attr);
+                    get(id).removeAttribute(attr);
                 }
                 break;
             // remove attribute ns
@@ -454,7 +481,7 @@ export function work() {
                     let len = u8Buf[u8BufPos];
                     const ns = asciiDecode(u8BufPos + 1, len);
                     u8BufPos += 1 + len;
-                    nodes[id - 1].removeAttributeNS(ns, attr);
+                    get(id).removeAttributeNS(ns, attr);
                 }
                 break;
             // set the id size
@@ -482,7 +509,6 @@ export function work() {
                         template.content.appendChild(createFullElement());
                     }
                     current_template.template = template;
-                    current_template.finalize();
                     templates[id] = current_template;
                     current_template = null;
                 }
@@ -1039,8 +1065,9 @@ function convertEvent(id) {
     return events[id];
 }
 
-const batch = 500000;
+const batch = 100000;
 const elements = 1;
+const customizations = 10;
 export function bench() {
     {
         let sum = 0;
@@ -1055,6 +1082,9 @@ export function bench() {
             const o = performance.now();
             for (let i = 0; i < elements; i++) {
                 let x = block.cloneNode(true);
+                for (let i = 0; i < customizations; i++) {
+                    x.firstChild.setAttribute("class", i);
+                }
             }
             const n = performance.now();
             sum += n - o;

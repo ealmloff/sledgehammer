@@ -13,12 +13,14 @@ use element::*;
 
 use dioxus_interpreter_js::Interpreter;
 
-use wasm_bindgen::prelude::*;
+use wasm_bindgen::{prelude::*, JsCast};
 use web_sys::{console, Document, HtmlHeadElement, Node, Performance};
 
+const CUSTOMIZATIONS: usize = 10;
 const BATCHES: usize = 100000;
 const ELEMENTS: usize = 1;
 const ID: Option<u64> = Some(1);
+const NO_ID: Option<u64> = None;
 
 static mut PTR: u32 = 0;
 static mut PTR_PTR: *const u32 = unsafe { &PTR } as *const u32;
@@ -98,7 +100,7 @@ fn bench_msg_element(perf: &Performance) {
             msg.set_attribute(Attribute::hidden, true, ID);
             msg.create_element(Element::div, ID.map(|id| id + 1));
             msg.set_attribute(Attribute::class, &"test", ID.map(|id| id + 1));
-            msg.create_element(Element::input, None);
+            msg.create_element(Element::input, NO_ID);
             msg.append_children(2);
         }
         msg.build();
@@ -198,10 +200,13 @@ fn bench_msg_element_builder_clone(perf: &Performance) {
     for _ in 0..BATCHES {
         prep();
         let start = perf.now();
-        let vec = Vec::with_capacity(3 * ELEMENTS);
+        let vec = Vec::with_capacity(5 * ELEMENTS);
         let mut msg = MsgBuilder::with(vec);
-        for _ in 0..ELEMENTS {
+        for i in 0..ELEMENTS {
             msg.create_template_ref(1, ID);
+            for _ in 0..CUSTOMIZATIONS {
+                msg.set_attribute(Attribute::class, &i.to_string(), (1, 0));
+            }
         }
         msg.build();
         let end = perf.now();
@@ -224,14 +229,14 @@ fn bench_msg_element_builder_create_template(perf: &Performance) {
         Element::blockquote,
         ((Attribute::hidden, true),),
         (
-            ElementBuilder::new(Some(1), Element::div, ((Attribute::class, &"test"),), ()),
+            ElementBuilder::new(Some(0), Element::div, ((Attribute::class, &"test"),), ()),
             ElementBuilder::new(None, Element::input, (), ()),
         ),
     );
     for _ in 0..BATCHES {
         prep();
         let start = perf.now();
-        EL.create_template(1);
+        EL.create_template(0);
         let end = perf.now();
         sum += end - start;
     }
@@ -258,7 +263,7 @@ fn bench_msg_pre_alloc(perf: &Performance) {
             msg.set_attribute(Attribute::hidden, true, ID);
             msg.create_element(Element::div, ID.map(|id| id + 1));
             msg.set_attribute(Attribute::class, &"test", ID.map(|id| id + 1));
-            msg.create_element(Element::input, None);
+            msg.create_element(Element::input, NO_ID);
             msg.append_children(2);
         }
         msg.build();
@@ -281,7 +286,7 @@ fn bench_msg_element_custom(perf: &Performance) {
             msg.set_attribute("class", &"test", ID.map(|id| id + 1));
             msg.append_children(1);
             // msg.remove_attribute("hidden", ID.unwrap());
-            msg.create_element("input", None);
+            msg.create_element("input", NO_ID);
             // msg.insert_after(ID.unwrap() + 1, 1);
         }
         msg.build();
@@ -298,8 +303,8 @@ fn bench_msg_custom_element(perf: &Performance) {
         let start = perf.now();
         let mut msg = MsgBuilder::new();
         for _ in 0..ELEMENTS {
-            msg.create_element("blockquote", None);
-            msg.create_element("div", None);
+            msg.create_element("blockquote", NO_ID);
+            msg.create_element("div", NO_ID);
             msg.append_children(1);
         }
         msg.build();
@@ -318,8 +323,8 @@ fn bench_msg_custom_element_alloc(perf: &Performance) {
         let vec = Vec::with_capacity(LEN2);
         let mut msg = MsgBuilder::with(vec);
         for _ in 0..ELEMENTS {
-            msg.create_element("blockquote", None);
-            msg.create_element("div", None);
+            msg.create_element("blockquote", NO_ID);
+            msg.create_element("div", NO_ID);
             msg.append_children(1);
         }
         msg.build();
@@ -335,7 +340,7 @@ fn bench_msg_set_attribute(perf: &Performance) {
         let start = perf.now();
         let mut msg = MsgBuilder::new();
         for _ in 0..ELEMENTS {
-            msg.set_attribute(Attribute::alt, &"true", None);
+            msg.set_attribute(Attribute::alt, &"true", NO_ID);
         }
         msg.build();
         let end = perf.now();
@@ -350,8 +355,8 @@ fn bench_msg_combined(perf: &Performance) {
         let start = perf.now();
         let mut msg = MsgBuilder::new();
         for _ in 0..ELEMENTS {
-            msg.create_element(Element::blockquote, None);
-            msg.set_attribute(Attribute::alt, &"true", None);
+            msg.create_element(Element::blockquote, NO_ID);
+            msg.set_attribute(Attribute::alt, &"true", NO_ID);
         }
         msg.build();
         let end = perf.now();
@@ -404,7 +409,11 @@ fn bench_create_element_clone(doc: &Document, perf: &Performance) {
     for _ in 0..BATCHES {
         let start = perf.now();
         for _ in 0..ELEMENTS {
-            let _ = block.clone_node_with_deep(true).unwrap();
+            let el = block.clone_node_with_deep(true).unwrap();
+            for i in 0..CUSTOMIZATIONS {
+                let element: web_sys::Element = JsCast::unchecked_into(el.first_child().unwrap());
+                element.set_attribute("class", &i.to_string()).unwrap();
+            }
         }
         let end = perf.now();
         sum += end - start;
@@ -441,7 +450,7 @@ pub fn main() {
     let doc = win.document().unwrap();
     let perf = win.performance().unwrap();
 
-    for _ in 0..10 {
+    for _ in 0..1 {
         // bench_dioxus(&doc, &perf);
 
         // bench_hand(&perf);
@@ -462,13 +471,13 @@ pub fn main() {
 
         // bench_msg_element_builder_prealoc(&perf);
 
-        // bench_create_element_clone(&doc, &perf);
+        bench_create_element_clone(&doc, &perf);
 
-        // bench_msg_element_builder_clone(&perf);
+        bench_msg_element_builder_clone(&perf);
 
-        bench_msg_element_builder_create_template(&perf);
+        // bench_msg_element_builder_create_template(&perf);
 
-        // bench();
+        bench();
 
         // bench_template();
     }
