@@ -5,6 +5,10 @@ let u8BufPos;
 let ptr_ptr;
 let len_ptr;
 
+// this is a crime, but it is a fast crime so...
+let current_template_id;
+let current_template_node_id;
+
 class TemplateRef {
     constructor(fragment, dynamicNodePaths, id) {
         this.fragment = fragment;
@@ -33,13 +37,13 @@ class TemplateRef {
             }
         }
         this.nodes[id] = current;
+        return current;
     }
 
     get(id) {
         const intial = this.nodes[id];
-        if (!intial) {
-            this.build(id);
-            return this.nodes[id];
+        if (intial === undefined) {
+            return this.build(id);
         }
         else {
             return intial;
@@ -93,8 +97,8 @@ class Template {
 }
 
 export function get(id) {
-    if (id.length) {
-        return nodes[id[0] - 1].get(id[1]);
+    if (id === -1) {
+        return nodes[current_template_id - 1].get(current_template_node_id);
     }
     else {
         return nodes[id - 1];
@@ -183,17 +187,16 @@ function decodeId() {
         return id;
     }
     else if (id_code === 2) {
-        let template_id = u8Buf[u8BufPos];
+        current_template_id = u8Buf[u8BufPos++];
         for (let i = 1; i < idSize; i++) {
-            template_id |= u8Buf[u8BufPos + i] << (i * 8);
+            current_template_id |= u8Buf[u8BufPos++] << (i * 8);
         }
-        u8BufPos += idSize;
-        let node_id = u8Buf[u8BufPos];
+        current_template_node_id = u8Buf[u8BufPos++];
         for (let i = 1; i < idSize; i++) {
-            node_id |= u8Buf[u8BufPos + i] << (i * 8);
+            current_template_node_id |= u8Buf[u8BufPos++] << (i * 8);
         }
-        u8BufPos += idSize;
-        return [template_id, node_id];
+
+        return -1;
     }
 }
 
@@ -290,8 +293,7 @@ export function work() {
     u8BufPos = decodePtr(ptr_ptr);
     const end = u8BufPos + decodePtr(len_ptr);
     while (u8BufPos < end) {
-        const op = u8Buf[u8BufPos++];
-        switch (op) {
+        switch (u8Buf[u8BufPos++]) {
             // push root
             case 0:
                 {
@@ -1067,66 +1069,48 @@ function convertEvent(id) {
 
 const batch = 100000;
 const elements = 1;
-const customizations = 10;
-export function bench() {
-    {
-        let sum = 0;
-        let block = document.createElement("blockquote");
-        block.setAttribute("hidden", true);
-        let div = document.createElement("div");
-        block.setAttribute("class", "test");
-        block.appendChild(div);
-        let input = document.createElement("input");
-        block.appendChild(input);
-        for (let i = 0; i < batch; i++) {
-            const o = performance.now();
-            for (let i = 0; i < elements; i++) {
-                let x = block.cloneNode(true);
-                for (let i = 0; i < customizations; i++) {
-                    x.firstChild.setAttribute("class", i);
-                }
+export function bench(m) {
+    let sum = 0;
+    let block = document.createElement("blockquote");
+    block.setAttribute("hidden", true);
+    let div = document.createElement("div");
+    block.setAttribute("class", "test");
+    block.appendChild(div);
+    let input = document.createElement("input");
+    block.appendChild(input);
+    for (let i = 0; i < batch; i++) {
+        const o = performance.now();
+        for (let i = 0; i < elements; i++) {
+            let x = block.cloneNode(true);
+            for (let i = 0; i < m; i++) {
+                x.firstChild.setAttribute("class", i);
             }
-            const n = performance.now();
-            sum += n - o;
         }
-
-        console.log(`${sum / batch} native js cloneNode`);
+        const n = performance.now();
+        sum += n - o;
     }
+
+    let avg = sum / batch;
+    console.log(`${avg} native js cloneNode`);
+    return avg;
 }
 
 export function bench_template() {
-    {
-        let sum = 0;
-        for (let i = 0; i < batch; i++) {
-            const o = performance.now();
-            for (let i = 0; i < elements; i++) {
-                let block = document.createElement("blockquote");
-                block.setAttribute("hidden", true);
-                let div = document.createElement("div");
-                block.setAttribute("class", "test");
-                block.appendChild(div);
-                let input = document.createElement("input");
-                block.appendChild(input);
-            }
-            const n = performance.now();
-            sum += n - o;
+    let sum = 0;
+    for (let i = 0; i < batch; i++) {
+        const o = performance.now();
+        for (let i = 0; i < elements; i++) {
+            let block = document.createElement("blockquote");
+            block.setAttribute("hidden", true);
+            let div = document.createElement("div");
+            block.setAttribute("class", "test");
+            block.appendChild(div);
+            let input = document.createElement("input");
+            block.appendChild(input);
         }
-
-        console.log(`${sum / batch} native js create template`);
+        const n = performance.now();
+        sum += n - o;
     }
 
-    // {
-    //     let sum = 0;
-    //     const head = document.head;
-    //     for (let i = 0; i < batch; i++) {
-    //         const o = performance.now();
-    //         for (let i = 0; i < elements; i++) {
-    //             head.setAttribute("alt", "true");
-    //         }
-    //         const n = performance.now();
-    //         sum += n - o;
-    //     }
-
-    //     console.log(`${sum / batch} native js`);
-    // }
+    console.log(`${sum / batch} native js create template`);
 }

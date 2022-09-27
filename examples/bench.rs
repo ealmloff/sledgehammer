@@ -1,61 +1,16 @@
-#![allow(non_camel_case_types)]
-
-// mod attrs;
-mod attribute;
-mod builder;
-mod element;
-mod event;
-mod value;
-
-pub use attribute::*;
-pub use builder::*;
-pub use element::*;
-
 use dioxus_interpreter_js::Interpreter;
+use fast_dom::*;
 
 use easybench_wasm::bench as wasm_bench;
-use wasm_bindgen::{prelude::*, JsCast};
-use web_sys::{console, Document, HtmlHeadElement, Node, Performance};
+use wasm_bindgen::JsCast;
+use web_sys::{console, Document, HtmlHeadElement, Performance};
 
 const CUSTOMIZATIONS: usize = 0;
 const ELEMENTS: usize = 1;
 const ID: Option<u64> = Some(1);
 const NO_ID: Option<u64> = None;
 
-static mut PTR: u32 = 0;
-static mut PTR_PTR: *const u32 = unsafe { &PTR } as *const u32;
-static mut LEN_PTR: u32 = 0;
-static mut LEN_PTR_PTR: *const u32 = unsafe { &LEN_PTR } as *const u32;
-
-#[wasm_bindgen(module = "/interpreter.js")]
-extern "C" {
-    fn interperter_init(mem: JsValue, ptr: u32, size: u32);
-
-    #[wasm_bindgen(js_name = "work")]
-    fn work_inner();
-
-    fn set_node(id: u64, node: Node);
-
-    fn bench();
-
-    fn bench_template();
-
-    fn prep();
-}
-
-fn work(data: &[u8]) {
-    let ptr = data.as_ptr();
-    let len = data.len();
-    unsafe {
-        PTR = ptr as u32;
-        LEN_PTR = len as u32
-    };
-    work_inner();
-
-    let _ = data;
-}
-
-fn bench_hand(perf: &Performance) {
+fn bench_hand() {
     let res = wasm_bench(|| {
         prep();
         // const MSG: &[u8; ELEMENTS * 32] = &[
@@ -85,7 +40,7 @@ fn bench_hand(perf: &Performance) {
     console::log_1(&format!(" msg.create_element hand\n{}", res).into());
 }
 
-fn bench_msg_element(perf: &Performance) {
+fn bench_msg_element() {
     let res = wasm_bench(|| {
         prep();
         let mut msg = MsgBuilder::new();
@@ -102,7 +57,7 @@ fn bench_msg_element(perf: &Performance) {
     console::log_1(&format!(" msg.create_element\n{}", res).into());
 }
 
-fn bench_msg_element_builder(perf: &Performance) {
+fn bench_msg_element_builder() {
     let res = wasm_bench(|| {
         prep();
         const EL: ElementBuilder<
@@ -130,7 +85,7 @@ fn bench_msg_element_builder(perf: &Performance) {
     console::log_1(&format!(" msg.create_element builder\n{}", res).into());
 }
 
-fn bench_msg_element_builder_prealoc(perf: &Performance) {
+fn bench_msg_element_builder_prealoc() {
     const EL: ElementBuilder<
         Element,
         ((Attribute, bool),),
@@ -156,7 +111,7 @@ fn bench_msg_element_builder_prealoc(perf: &Performance) {
     console::log_1(&format!(" msg.create_element builder prealoc\n{}", res).into());
 }
 
-fn bench_msg_element_builder_clone(perf: &Performance) {
+fn bench_msg_element_builder_clone() {
     const EL: ElementBuilder<
         Element,
         ((Attribute, bool),),
@@ -189,7 +144,7 @@ fn bench_msg_element_builder_clone(perf: &Performance) {
     console::log_1(&format!(" msg.create_element builder clone\n{}", res).into());
 }
 
-fn bench_msg_element_builder_create_template(perf: &Performance) {
+fn bench_msg_element_builder_create_template() {
     const EL: ElementBuilder<
         Element,
         ((Attribute, bool),),
@@ -213,7 +168,7 @@ fn bench_msg_element_builder_create_template(perf: &Performance) {
     console::log_1(&format!(" msg.create_element builder create template\n{}", res).into());
 }
 
-fn bench_msg_pre_alloc(perf: &Performance) {
+fn bench_msg_pre_alloc() {
     const LEN: usize = 32 * ELEMENTS;
     let res = wasm_bench(|| {
         prep();
@@ -233,7 +188,7 @@ fn bench_msg_pre_alloc(perf: &Performance) {
     console::log_1(&format!(" msg.create_element prealoc\n{}", res).into());
 }
 
-fn bench_msg_element_custom(perf: &Performance) {
+fn bench_msg_element_custom() {
     let res = wasm_bench(|| {
         prep();
         let mut msg = MsgBuilder::new();
@@ -252,7 +207,7 @@ fn bench_msg_element_custom(perf: &Performance) {
     console::log_1(&format!(" msg.create_element custom\n{}", res).into());
 }
 
-fn bench_msg_custom_element(perf: &Performance) {
+fn bench_msg_custom_element() {
     let res = wasm_bench(|| {
         prep();
         let mut msg = MsgBuilder::new();
@@ -266,7 +221,7 @@ fn bench_msg_custom_element(perf: &Performance) {
     console::log_1(&format!(" msg.create_element custom\n{}", res).into());
 }
 
-fn bench_msg_custom_element_alloc(perf: &Performance) {
+fn bench_msg_custom_element_alloc() {
     const LEN2: usize = ("blockquote".len() + "div".len() + 8) * ELEMENTS;
     let res = wasm_bench(|| {
         prep();
@@ -282,7 +237,7 @@ fn bench_msg_custom_element_alloc(perf: &Performance) {
     console::log_1(&format!(" msg.create_element custom prealoc\n{}", res).into());
 }
 
-fn bench_msg_set_attribute(perf: &Performance) {
+fn bench_msg_set_attribute() {
     let res = wasm_bench(|| {
         let mut msg = MsgBuilder::new();
         for _ in 0..ELEMENTS {
@@ -293,7 +248,7 @@ fn bench_msg_set_attribute(perf: &Performance) {
     console::log_1(&format!(" msg.set_attribute\n{}", res).into());
 }
 
-fn bench_msg_combined(perf: &Performance) {
+fn bench_msg_combined() {
     let res = wasm_bench(|| {
         let mut msg = MsgBuilder::new();
         for _ in 0..ELEMENTS {
@@ -305,7 +260,7 @@ fn bench_msg_combined(perf: &Performance) {
     console::log_1(&format!(" msg.combined\n{}", res).into());
 }
 
-fn bench_set_attribute(head: &HtmlHeadElement, perf: &Performance) {
+fn bench_set_attribute(head: &HtmlHeadElement) {
     let res = wasm_bench(|| {
         for _ in 0..ELEMENTS {
             head.set_attribute("alt", "true").unwrap();
@@ -314,7 +269,7 @@ fn bench_set_attribute(head: &HtmlHeadElement, perf: &Performance) {
     console::log_1(&format!(" set_attribute\n{}", res).into());
 }
 
-fn bench_create_element(doc: &Document, perf: &Performance) {
+fn bench_create_element(doc: &Document) {
     let res = wasm_bench(|| {
         for _ in 0..ELEMENTS {
             let block = doc.create_element("blockquote").unwrap();
@@ -329,7 +284,7 @@ fn bench_create_element(doc: &Document, perf: &Performance) {
     console::log_1(&format!(" create_element (web-sys)\n{}", res).into());
 }
 
-fn bench_create_element_clone(doc: &Document, perf: &Performance) {
+fn bench_create_element_clone(doc: &Document) {
     let block = doc.create_element("blockquote").unwrap();
     block.set_attribute("hidden", "true").unwrap();
     let div = doc.create_element("div").unwrap();
@@ -349,7 +304,7 @@ fn bench_create_element_clone(doc: &Document, perf: &Performance) {
     console::log_1(&format!("create_element clone (web-sys)\n{}", res).into());
 }
 
-fn bench_dioxus(doc: &Document, perf: &Performance) {
+fn bench_dioxus(doc: &Document) {
     let res = wasm_bench(|| {
         let root = doc.create_element("div").unwrap();
         let interpreter = Interpreter::new(root);
@@ -366,42 +321,39 @@ fn bench_dioxus(doc: &Document, perf: &Performance) {
 }
 
 pub fn main() {
-    unsafe {
-        interperter_init(wasm_bindgen::memory(), PTR_PTR as u32, LEN_PTR_PTR as u32);
-    }
+    init();
 
     let win = web_sys::window().unwrap();
     let doc = win.document().unwrap();
-    let perf = win.performance().unwrap();
 
     for _ in 0..1 {
-        bench_dioxus(&doc, &perf);
+        bench_dioxus(&doc);
 
-        // bench_hand(&perf);
+        // bench_hand();
 
-        bench_msg_element(&perf);
+        bench_msg_element();
 
-        bench_msg_pre_alloc(&perf);
+        bench_msg_pre_alloc();
 
-        // bench_msg_element_custom(&perf);
+        // bench_msg_element_custom();
 
-        // bench_msg_custom_element(&perf);
+        // bench_msg_custom_element();
 
-        // bench_msg_custom_element_alloc(&perf);
+        // bench_msg_custom_element_alloc();
 
-        bench_msg_element_builder(&perf);
+        bench_msg_element_builder();
 
-        bench_create_element(&doc, &perf);
+        bench_create_element(&doc);
 
-        bench_msg_element_builder_prealoc(&perf);
+        bench_msg_element_builder_prealoc();
 
-        bench_create_element_clone(&doc, &perf);
+        bench_create_element_clone(&doc);
 
-        bench_msg_element_builder_clone(&perf);
+        bench_msg_element_builder_clone();
 
-        bench_msg_element_builder_create_template(&perf);
+        bench_msg_element_builder_create_template();
 
-        bench();
+        bench(0);
 
         bench_template();
     }
