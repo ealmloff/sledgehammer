@@ -1,25 +1,29 @@
-let u8Buf = new Uint8Array();
-let templates = [];
-let current_template = null;
-let u8BufPos;
-let ptr_ptr;
-let len_ptr;
+const globalData = {
+    u8Buf: new Uint8Array(),
+    templates: [],
+    stack: [],
+    nodes: [],
+};
+let u8BufPos,
+    current_template,
+    ptr_ptr,
+    len_ptr,
+    idSize = 1,
+    // this is a crime, but it is a fast crime so...
+    current_template_id,
+    current_template_node_id;
 
-// this is a crime, but it is a fast crime so...
-let current_template_id;
-let current_template_node_id;
 
 class TemplateRef {
     constructor(fragment, dynamicNodePaths, id) {
         this.fragment = fragment;
         this.dynamicNodePaths = dynamicNodePaths;
         this.id = id;
-        this.placed = false;
-        this.roots = [];
         this.nodes = [];
     }
 
     buildRoots() {
+        this.roots = [];
         let i = 0;
         for (let node = this.fragment.firstChild; node != null; node = node.nextSibling) {
             this.roots[i++] = node;
@@ -97,37 +101,37 @@ class Template {
 }
 
 export function get(id) {
+    const globalData2 = globalData;
     if (id === -1) {
-        return nodes[current_template_id - 1].get(current_template_node_id);
+        return globalData2.nodes[current_template_id - 1].get(current_template_node_id);
     }
     else {
-        return nodes[id - 1];
+        return globalData2.nodes[id - 1];
     }
 }
 
 export function interperter_init(mem, _ptr_ptr, _len_ptr) {
-    u8Buf = new Uint8Array(mem.buffer);
+    const globalData2 = globalData;
+    globalData2.u8Buf = new Uint8Array(mem.buffer);
     ptr_ptr = _ptr_ptr;
     len_ptr = _len_ptr;
 }
 
 export function prep() {
-    stack = [];
+    const globalData2 = globalData;
+    globalData2.stack = [];
     u8BufPos = 0;
     current_template = null;
     idSize = 1;
-    nodes = [];
+    globalData2.nodes = [];
 }
 
-let stack = [];
-let idSize = 1;
-let nodes = [];
-
 export function set_node(id, node) {
-    nodes[id - BigInt(1)] = node;
+    globalData.nodes[id - BigInt(1)] = node;
 }
 
 function utf8Decode(byteLength) {
+    const u8Buf = globalData.u8Buf;
     const end = u8BufPos + byteLength;
     let out = "";
     while (u8BufPos < end) {
@@ -165,6 +169,8 @@ function utf8Decode(byteLength) {
 }
 
 function asciiDecode(byteLength) {
+    const globalData2 = globalData;
+    const u8Buf = globalData2.u8Buf;
     const end = u8BufPos + byteLength;
     let out = "";
     while (u8BufPos < end) {
@@ -174,16 +180,17 @@ function asciiDecode(byteLength) {
 }
 
 function decodeId() {
+    const globalData2 = globalData;
+    const u8Buf = globalData2.u8Buf;
     const id_code = u8Buf[u8BufPos++];
     if (id_code === 0) {
         return 0;
     }
     else if (id_code === 1) {
-        let id = u8Buf[u8BufPos];
+        let id = u8Buf[u8BufPos++];
         for (let i = 1; i < idSize; i++) {
-            id |= u8Buf[u8BufPos + i] << (i * 8);
+            id |= u8Buf[u8BufPos++] << (i * 8);
         }
-        u8BufPos += idSize;
         return id;
     }
     else if (id_code === 2) {
@@ -200,25 +207,30 @@ function decodeId() {
     }
 }
 
-function decodePtr(start) {
-    let val = u8Buf[start];
+function decodePtr(s) {
+    let start = s;
+    const u8Buf = globalData.u8Buf;
+    let val = u8Buf[start++];
     for (let i = 1; i < 4; i++) {
-        val |= u8Buf[start + i] << (i * 8);
+        val |= u8Buf[start++] << (i * 8);
     }
     return val;
 }
 
 function decodeU32() {
+    const globalData2 = globalData;
+    const u8Buf = globalData2.u8Buf;
     let val = u8Buf[u8BufPos];
     for (let i = 1; i < 4; i++) {
-        val |= u8Buf[u8BufPos + i] << (i * 8);
+        val |= u8Buf[u8BufPos++] << (i * 8);
     }
-    u8BufPos += 4;
     return val;
 }
 
 function createElement() {
     let str;
+    const globalData2 = globalData;
+    const u8Buf = globalData2.u8Buf;
     const element = u8Buf[u8BufPos++];
     if (element === 255) {
         const len = u8Buf[u8BufPos++];
@@ -231,6 +243,8 @@ function createElement() {
 }
 
 function createFullElement() {
+    const globalData2 = globalData;
+    const u8Buf = globalData2.u8Buf;
     const id = decodeId();
     const element = createElement();
     const numAttributes = u8Buf[u8BufPos++];
@@ -259,14 +273,14 @@ function createFullElement() {
     }
     else {
         if (id !== 0) {
-            nodes[id - 1] = element;
+            globalData2.nodes[id - 1] = element;
         }
     }
     return element;
 }
 
 function decodeValue() {
-    const identifier = u8Buf[u8BufPos++];
+    const identifier = globalData.u8Buf[u8BufPos++];
     if (identifier === 255) {
         return true;
     }
@@ -279,6 +293,7 @@ function decodeValue() {
 }
 
 function decodeAttribute() {
+    const u8Buf = globalData.u8Buf;
     const data = u8Buf[u8BufPos++];
     if (data === 255) {
         const len = u8Buf[u8BufPos++];
@@ -290,6 +305,8 @@ function decodeAttribute() {
 }
 
 export function work() {
+    const globalData2 = globalData;
+    const u8Buf = globalData2.u8Buf;
     u8BufPos = decodePtr(ptr_ptr);
     const end = u8BufPos + decodePtr(len_ptr);
     while (u8BufPos < end) {
@@ -298,18 +315,19 @@ export function work() {
             case 0:
                 {
                     const id = decodeId();
-                    stack.push(id);
+                    globalData2.stack.push(id);
                 }
                 break;
             // pop root
             case 1:
                 {
-                    stack.pop();
+                    globalData2.stack.pop();
                 }
                 break;
             // append children
             case 2:
                 {
+                    const stack = globalData2.stack;
                     const children = u8Buf[u8BufPos++];
                     const parent = stack[stack.length - 1 - children];
                     for (let i = 0; i < children; i++) {
@@ -322,7 +340,7 @@ export function work() {
                 {
                     const id = decodeId();
                     const num = decodeU32(u8BufPos + idSize);
-                    get(id).replaceWith(...stack.splice(-num));
+                    get(id).replaceWith(...globalData2.stack.splice(-num));
                 }
                 break;
             // insert before
@@ -330,7 +348,7 @@ export function work() {
                 {
                     const id = decodeId();
                     const num = decodeU32(u8BufPos + idSize);
-                    get(id).before(...stack.splice(-num));
+                    get(id).before(...globalData2.stack.splice(-num));
                 }
                 break;
             // insert after
@@ -338,7 +356,7 @@ export function work() {
                 {
                     const id = decodeId();
                     const num = decodeU32(u8BufPos + idSize);
-                    const splice = stack.splice(-num);
+                    const splice = globalData2.stack.splice(-num);
                     get(id).after(...splice);
                 }
                 break;
@@ -354,9 +372,9 @@ export function work() {
                 {
                     const id = decodeId();
                     const last = document.createTextNode(utf8Decode(u8Buf[u8BufPos++]));
-                    stack.push(last);
+                    globalData2.stack.push(last);
                     if (id !== 0) {
-                        nodes[id - 1] = last;
+                        globalData2.nodes[id - 1] = last;
                     }
                 }
                 break;
@@ -364,9 +382,9 @@ export function work() {
             case 8:
                 const id = decodeId();
                 const el = createElement();
-                stack.push(el);
+                globalData2.stack.push(el);
                 if (id !== 0) {
-                    nodes[id - 1] = el;
+                    globalData2.nodes[id - 1] = el;
                 }
                 break;
             // create element ns
@@ -384,9 +402,9 @@ export function work() {
                     }
                     const ns = asciiDecode(u8Buf[u8BufPos++]);
                     const last = document.createElementNS(ns, str);
-                    stack.push(last);
+                    globalData2.stack.push(last);
                     if (id !== 0) {
-                        nodes[id - 1] = last;
+                        globalData2.nodes[id - 1] = last;
                     }
                 }
                 break;
@@ -396,8 +414,8 @@ export function work() {
                     const id = decodeId();
                     const last = document.createElement("pre");
                     last.hidden = true;
-                    stack.push(last);
-                    nodes[id - 1] = last;
+                    globalData2.stack.push(last);
+                    globalData2.nodes[id - 1] = last;
                 }
                 break;
             // set event listener
@@ -443,6 +461,7 @@ export function work() {
                     const id = decodeId();
                     const attr = decodeAttribute();
                     const val = decodeValue();
+                    const stack = globalData2.stack;
                     if (id === 0) {
                         stack[stack.length - 1].setAttribute(attr, val);
                     }
@@ -482,7 +501,6 @@ export function work() {
                     }
                     let len = u8Buf[u8BufPos];
                     const ns = asciiDecode(u8BufPos + 1, len);
-                    u8BufPos += 1 + len;
                     get(id).removeAttributeNS(ns, attr);
                 }
                 break;
@@ -496,7 +514,7 @@ export function work() {
             case 18:
                 {
                     const el = createFullElement();
-                    stack.push(el);
+                    globalData2.stack.push(el);
                 }
                 break;
             // create template
@@ -511,7 +529,7 @@ export function work() {
                         template.content.appendChild(createFullElement());
                     }
                     current_template.template = template;
-                    templates[id] = current_template;
+                    globalData2.templates[id] = current_template;
                     current_template = null;
                 }
                 break;
@@ -520,11 +538,11 @@ export function work() {
                 {
                     const template_id = decodeId();
                     const id = decodeId();
-                    const template = templates[template_id];
+                    const template = globalData2.templates[template_id];
                     const ref = template.ref();
-                    stack.push(ref);
+                    globalData2.stack.push(ref);
                     if (id !== 0) {
-                        nodes[id - 1] = ref;
+                        globalData2.nodes[id - 1] = ref;
                     }
                 }
                 break;
