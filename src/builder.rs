@@ -175,6 +175,7 @@ impl<V: VecLike<Item = u8> + AsRef<[u8]> + Debug> MsgBuilder<V> {
         self.check_id(&id);
         self.buf.add_element(Op::RemoveAttributeNs as u8);
         id.encode(&mut self.buf, self.id_size);
+        attribute.encode(&mut self.buf);
         encode_str(&mut self.buf, ns);
     }
 
