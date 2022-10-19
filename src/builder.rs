@@ -1,370 +1,489 @@
 use smallvec::SmallVec;
-use std::fmt::Debug;
-use web_sys::Node;
+use web_sys::{Element, Node};
 
 use crate::{
-    attribute::IntoAttribue,
-    element::{ElementBuilderExt, IntoElement, ManyElements},
-    event::IntoEvent,
-    set_node,
-    value::IntoValue,
-    work,
+    get_id_size, set_id_size, work_last_created, ElementBuilderExt, IntoAttribue, JsInterpreter,
+    MSG_PTR_PTR, STR_LEN_PTR, STR_PTR_PTR,
 };
 
-pub trait VecLike {
-    type Item;
+pub(crate) fn id_size(bytes: [u8; 8]) -> u8 {
+    let first_contentful_byte = bytes.iter().rev().position(|&b| b != 0).unwrap_or(8);
+    (8 - first_contentful_byte) as u8
+}
+
+#[allow(clippy::len_without_is_empty)]
+pub trait VecLike<Item>: AsRef<[Item]> {
+    fn add_element(&mut self, element: Item);
 
     #[inline]
-    fn add_element(&mut self, element: Self::Item);
-
-    #[inline]
-    fn extend_owned_slice<const N: usize>(&mut self, slice: [Self::Item; N]) {
+    fn extend_owned_slice<const N: usize>(&mut self, slice: [Item; N]) {
         self.extend_slice(&slice)
     }
 
-    #[inline]
-    fn extend_slice(&mut self, slice: &[Self::Item]);
+    fn extend_slice(&mut self, slice: &[Item]);
 
-    #[inline]
     fn len(&self) -> usize;
+
+    fn clear(&mut self);
 }
 
-impl<Item: Copy> VecLike for Vec<Item> {
-    type Item = Item;
-
-    fn add_element(&mut self, element: Self::Item) {
+impl<Item: Copy> VecLike<Item> for Vec<Item> {
+    fn add_element(&mut self, element: Item) {
         self.push(element);
     }
 
-    fn extend_slice(&mut self, slice: &[Self::Item]) {
-        self.extend(slice.into_iter().copied());
+    fn extend_slice(&mut self, slice: &[Item]) {
+        self.extend(slice.iter().copied());
     }
 
     fn len(&self) -> usize {
         self.len()
     }
+
+    fn clear(&mut self) {
+        self.clear();
+    }
 }
 
-impl<const N: usize, Item: Copy> VecLike for SmallVec<[Item; N]> {
-    type Item = Item;
-
-    fn add_element(&mut self, element: Self::Item) {
+impl<const N: usize, Item: Copy> VecLike<Item> for SmallVec<[Item; N]> {
+    fn add_element(&mut self, element: Item) {
         self.push(element);
     }
 
-    fn extend_slice(&mut self, slice: &[Self::Item]) {
+    fn extend_slice(&mut self, slice: &[Item]) {
         self.extend_from_slice(slice);
     }
 
     fn len(&self) -> usize {
         self.len()
     }
+
+    fn clear(&mut self) {
+        self.clear();
+    }
 }
 
-#[derive(Default)]
-pub struct MsgBuilder<V: VecLike<Item = u8> + AsRef<[u8]>> {
-    pub(crate) buf: V,
-    // the number of bytes an id takes
-    pub(crate) id_size: u8,
+pub struct MsgBuilder<V: VecLike<u8> + AsRef<[u8]> = Vec<u8>> {
+    pub(crate) msg: V,
+    pub(crate) str_buf: V,
+    pub(crate) js_interpreter: JsInterpreter,
 }
 
-impl<V: VecLike<Item = u8> + AsRef<[u8]>> MsgBuilder<V> {
-    pub const fn with(v: V) -> Self {
-        Self { buf: v, id_size: 1 }
+impl<V: VecLike<u8> + AsRef<[u8]>> MsgBuilder<V> {
+    pub fn with(v: V, v2: V, el: Element) -> Self {
+        format!(
+            "init: {:?}, {:?}, {:?}",
+            unsafe { MSG_PTR_PTR as usize },
+            unsafe { STR_PTR_PTR as usize },
+            unsafe { STR_LEN_PTR as usize }
+        );
+        let js_interpreter = unsafe {
+            JsInterpreter::new(
+                el,
+                wasm_bindgen::memory(),
+                MSG_PTR_PTR as usize,
+                STR_PTR_PTR as usize,
+                STR_LEN_PTR as usize,
+            )
+        };
+
+        Self {
+            msg: v,
+            str_buf: v2,
+            js_interpreter,
+        }
     }
 }
 
 impl MsgBuilder<Vec<u8>> {
-    pub const fn new() -> Self {
-        Self {
-            buf: Vec::new(),
-            id_size: 1,
-        }
+    pub fn new(el: Element) -> Self {
+        Self::with(Vec::new(), Vec::new(), el)
     }
 }
 
 enum Op {
-    PushRoot = 0,
-    PopRoot = 1,
-    AppendChildren = 2,
-    ReplaceWith = 3,
-    InsertBefore = 4,
-    InsertAfter = 5,
-    Remove = 6,
-    CreateTextNode = 7,
-    CreateElement = 8,
-    CreateElementNs = 9,
-    CreatePlaceholder = 10,
-    SetEventListener = 11,
-    RemoveEventListener = 12,
-    SetText = 13,
-    SetAttribute = 14,
-    RemoveAttribute = 15,
-    RemoveAttributeNs = 16,
-    SetIdSize = 17,
-    CreateFullElement = 18,
-    CreateTemplate = 19,
-    CreateTemplateRef = 20,
+    /// Pop the topmost node from our stack and append them to the node
+    /// at the top of the stack.
+    // /// The parent to append nodes to.
+    // root: Option<u64>,
+
+    // /// The ids of the children to append.
+    // children: Vec<u64>,
+    AppendChildren = 0,
+
+    /// Replace a given (single) node with a handful of nodes currently on the stack.
+    // /// The ID of the node to be replaced.
+    // root: Option<u64>,
+
+    // /// The ids of the nodes to replace the root with.
+    // nodes: Vec<u64>,
+    ReplaceWith = 1,
+
+    /// Insert a number of nodes after a given node.
+    // /// The ID of the node to insert after.
+    // root: Option<u64>,
+
+    // /// The ids of the nodes to insert after the target node.
+    // nodes: Vec<u64>,
+    InsertAfter = 2,
+
+    /// Insert a number of nodes before a given node.
+    // /// The ID of the node to insert before.
+    // root: Option<u64>,
+
+    // /// The ids of the nodes to insert before the target node.
+    // nodes: Vec<u64>,
+    InsertBefore = 3,
+
+    /// Remove a particular node from the DOM
+    // /// The ID of the node to remove.
+    // root: Option<u64>,
+    Remove = 4,
+
+    /// Create a new purely-text node
+    // /// The ID the new node should have.
+    // root: Option<u64>,
+
+    // /// The textcontent of the node
+    // text: &'bump str,
+    CreateTextNode = 5,
+
+    /// Create a new purely-element node
+    // /// The ID the new node should have.
+    // root: Option<u64>,
+
+    // /// The tagname of the node
+    // tag: &'bump str,
+
+    // /// The number of children nodes that will follow this message.
+    // children: u32,
+    /// Create a new purely-comment node with a given namespace
+    // /// The ID the new node should have.
+    // root: Option<u64>,
+
+    // /// The namespace of the node
+    // tag: &'bump str,
+
+    // /// The namespace of the node (like `SVG`)
+    // ns: &'static str,
+
+    // /// The number of children nodes that will follow this message.
+    // children: u32,
+    CreateElement = 6,
+
+    /// Create a new placeholder node.
+    /// In most implementations, this will either be a hidden div or a comment node.
+    // /// The ID the new node should have.
+    // root: Option<u64>,
+    CreatePlaceholder = 7,
+
+    /// Set the textcontent of a node.
+    // /// The ID of the node to set the textcontent of.
+    // root: Option<u64>,
+
+    // /// The textcontent of the node
+    // text: &'bump str,
+    SetText = 10,
+
+    /// Set the value of a node's attribute.
+    // /// The ID of the node to set the attribute of.
+    // root: Option<u64>,
+
+    // /// The name of the attribute to set.
+    // field: &'static str,
+
+    // /// The value of the attribute.
+    // value: AttributeValue<'bump>,
+
+    // // value: &'bump str,
+    // /// The (optional) namespace of the attribute.
+    // /// For instance, "style" is in the "style" namespace.
+    // ns: Option<&'bump str>,
+    SetAttribute = 11,
+
+    /// Remove an attribute from a node.
+    // /// The ID of the node to remove.
+    // root: Option<u64>,
+
+    // /// The name of the attribute to remove.
+    // name: &'static str,
+
+    // /// The namespace of the attribute.
+    // ns: Option<&'bump str>,
+    RemoveAttribute = 12,
+
+    /// Clones a node.
+    // /// The ID of the node to clone.
+    // id: Option<u64>,
+
+    // /// The ID of the new node.
+    // new_id: u64,
+    CloneNode = 13,
+
+    /// Clones the children of a node. (allows cloning fragments)
+    // /// The ID of the node to clone.
+    // id: Option<u64>,
+
+    // /// The ID of the new node.
+    // new_ids: Vec<u64>,
+    CloneNodeChildren = 14,
+
+    /// Navigates to the last node to the first child of the current node.
+    FirstChild = 15,
+
+    /// Navigates to the last node to the last child of the current node.
+    NextSibling = 16,
+
+    /// Navigates to the last node to the parent of the current node.
+    ParentNode = 17,
+
+    /// Stores the last node with a new id.
+    // /// The ID of the node to store.
+    // id: u64,
+    StoreWithId = 18,
+
+    /// Manually set the last node.
+    // /// The ID to set the last node to.
+    // id: u64,
+    SetLastNode = 19,
+
+    /// Set id size
+    SetIdSize = 20,
+
+    /// Stop
+    Stop = 21,
+
+    /// Build Full Element
+    BuildFullElement = 22,
 }
 
-impl<V: VecLike<Item = u8> + AsRef<[u8]> + Debug> MsgBuilder<V> {
-    pub fn create_full_element(&mut self, builder: impl ElementBuilderExt) {
-        self.buf.add_element(Op::CreateFullElement as u8);
-        builder.encode(&mut self.buf, self.id_size);
-    }
-
-    pub fn check_id(&mut self, id: &impl IntoId) {
-        self.check_id_size(id.max_el_size());
-    }
-
-    pub fn check_id_size(&mut self, size: u8) {
-        if size > self.id_size {
-            self.set_id_size(size);
+impl<V: VecLike<u8>> MsgBuilder<V> {
+    pub fn append_children(&mut self, root: Option<u64>, children: Vec<u64>) {
+        let root = root.map(|id| self.check_id(id));
+        for child in &children {
+            self.check_id(*child);
+        }
+        self.msg.add_element(Op::AppendChildren as u8);
+        self.encode_maybe_id(root);
+        self.msg
+            .extend_slice(&(children.len() as u32).to_le_bytes());
+        for child in children {
+            self.encode_id(child.to_le_bytes());
         }
     }
 
-    pub fn create_element(&mut self, element: impl IntoElement, id: impl IntoId) {
-        self.check_id(&id);
-        self.buf.add_element(Op::CreateElement as u8);
-        id.encode(&mut self.buf, self.id_size);
-        element.encode(&mut self.buf);
+    pub fn replace_with(&mut self, root: Option<u64>, nodes: Vec<u64>) {
+        let root = root.map(|id| self.check_id(id));
+        for child in &nodes {
+            self.check_id(*child);
+        }
+        self.msg.add_element(Op::ReplaceWith as u8);
+        self.encode_maybe_id(root);
+        self.msg.extend_slice(&(nodes.len() as u32).to_le_bytes());
+        for node in nodes {
+            self.encode_id(node.to_le_bytes());
+        }
     }
 
-    pub fn create_element_ns(&mut self, element: impl IntoElement, ns: &str, id: impl IntoId) {
-        self.check_id(&id);
-        self.buf.add_element(Op::CreateElementNs as u8);
-        id.encode(&mut self.buf, self.id_size);
-        element.encode(&mut self.buf);
-        encode_str(&mut self.buf, ns);
+    pub fn insert_after(&mut self, root: Option<u64>, nodes: Vec<u64>) {
+        let root = root.map(|id| self.check_id(id));
+        for child in &nodes {
+            self.check_id(*child);
+        }
+        self.msg.add_element(Op::InsertAfter as u8);
+        self.encode_maybe_id(root);
+        self.msg.extend_slice(&(nodes.len() as u32).to_le_bytes());
+        for node in nodes {
+            self.encode_id(node.to_le_bytes());
+        }
     }
 
-    pub fn create_placeholder(&mut self, id: impl IntoId) {
-        self.check_id(&id);
-        self.buf.add_element(Op::CreatePlaceholder as u8);
-        id.encode(&mut self.buf, self.id_size);
+    pub fn insert_before(&mut self, root: Option<u64>, nodes: Vec<u64>) {
+        let root = root.map(|id| self.check_id(id));
+        for child in &nodes {
+            self.check_id(*child);
+        }
+        self.msg.add_element(Op::InsertBefore as u8);
+        self.encode_maybe_id(root);
+        self.msg.extend_slice(&(nodes.len() as u32).to_le_bytes());
+        for node in nodes {
+            self.encode_id(node.to_le_bytes());
+        }
     }
 
-    pub fn create_text_node(&mut self, text: &str, id: impl IntoId) {
-        self.check_id(&id);
-        self.buf.add_element(Op::CreateTextNode as u8);
-        id.encode(&mut self.buf, self.id_size);
-        encode_str(&mut self.buf, text);
+    pub fn remove(&mut self, id: Option<u64>) {
+        let root = id.map(|id| self.check_id(id));
+        self.msg.add_element(Op::Remove as u8);
+        self.encode_maybe_id(root);
     }
 
-    pub fn set_attribute(
+    pub fn create_text_node(&mut self, text: &str, id: Option<u64>) {
+        let root = id.map(|id| self.check_id(id));
+        self.msg.add_element(Op::CreateTextNode as u8);
+        self.encode_str(text);
+        self.encode_maybe_id(root);
+    }
+
+    pub fn create_element(
         &mut self,
-        attribute: impl IntoAttribue,
-        value: impl IntoValue,
-        id: impl IntoId,
+        tag: &'static str,
+        ns: Option<&'static str>,
+        id: Option<u64>,
+        children: u32,
     ) {
-        self.check_id(&id);
-        self.buf.add_element(Op::SetAttribute as u8);
-        id.encode(&mut self.buf, self.id_size);
-        attribute.encode(&mut self.buf);
-        value.encode(&mut self.buf);
+        let root = id.map(|id| self.check_id(id));
+        self.msg.add_element(Op::CreateElement as u8);
+        self.encode_cachable_str(tag);
+        if let Some(ns) = ns {
+            self.msg.add_element(1);
+            self.encode_cachable_str(ns);
+        } else {
+            self.msg.add_element(0);
+        }
+        self.encode_maybe_id(root);
+        self.msg.extend_slice(&children.to_le_bytes());
     }
 
-    pub fn remove_attribute(&mut self, attribute: impl IntoAttribue, id: impl IntoId) {
-        self.check_id(&id);
-        self.buf.add_element(Op::RemoveAttribute as u8);
-        id.encode(&mut self.buf, self.id_size);
-        attribute.encode(&mut self.buf);
+    pub fn create_placeholder(&mut self, id: Option<u64>) {
+        let root = id.map(|id| self.check_id(id));
+        self.msg.add_element(Op::CreatePlaceholder as u8);
+        self.encode_maybe_id(root);
     }
 
-    pub fn remove_attribute_ns(&mut self, attribute: impl IntoAttribue, ns: &str, id: impl IntoId) {
-        self.check_id(&id);
-        self.buf.add_element(Op::RemoveAttributeNs as u8);
-        id.encode(&mut self.buf, self.id_size);
-        attribute.encode(&mut self.buf);
-        encode_str(&mut self.buf, ns);
+    pub fn set_text(&mut self, text: &str, root: Option<u64>) {
+        let root = root.map(|id| self.check_id(id));
+        self.msg.add_element(Op::SetText as u8);
+        self.encode_maybe_id(root);
+        self.encode_str(text);
     }
 
-    pub fn append_children(&mut self, children: u8) {
-        self.buf.add_element(Op::AppendChildren as u8);
-        self.buf.add_element(children);
+    pub fn set_attribute(&mut self, attr: impl IntoAttribue, value: &str, root: Option<u64>) {
+        let root = root.map(|id| self.check_id(id));
+        self.msg.add_element(Op::SetAttribute as u8);
+        self.encode_maybe_id(root);
+        attr.encode(self);
+        self.encode_str(value);
     }
 
-    pub fn push_root(&mut self, id: impl IntoId) {
-        self.check_id(&id);
-        self.buf.add_element(Op::PushRoot as u8);
-        id.encode(&mut self.buf, self.id_size);
+    pub fn remove_attribute(&mut self, attr: impl IntoAttribue, root: Option<u64>) {
+        let root = root.map(|id| self.check_id(id));
+        self.msg.add_element(Op::RemoveAttribute as u8);
+        self.encode_maybe_id(root);
+        attr.encode(self);
     }
 
-    pub fn pop_root(&mut self) {
-        self.buf.add_element(Op::PopRoot as u8);
+    pub fn clone_node(&mut self, id: Option<u64>, new_id: Option<u64>) {
+        let root = id.map(|id| self.check_id(id));
+        let new_id = new_id.map(|id| self.check_id(id));
+        self.msg.add_element(Op::CloneNode as u8);
+        self.encode_maybe_id(root);
+        self.encode_maybe_id(new_id);
     }
 
-    pub fn insert_after(&mut self, id: impl IntoId, num: u32) {
-        self.check_id(&id);
-        self.buf.add_element(Op::InsertAfter as u8);
-        id.encode(&mut self.buf, self.id_size);
-        self.buf.extend_slice(&num.to_le_bytes());
+    pub fn clone_node_children(&mut self, id: Option<u64>, new_ids: Vec<u64>) {
+        let root = id.map(|id| self.check_id(id));
+        for id in &new_ids {
+            self.check_id(*id);
+        }
+        self.msg.add_element(Op::CloneNodeChildren as u8);
+        self.encode_maybe_id(root);
+        for id in new_ids {
+            self.encode_maybe_id(Some(id.to_le_bytes()));
+        }
     }
 
-    pub fn insert_before(&mut self, id: impl IntoId, num: u32) {
-        self.check_id(&id);
-        self.buf.add_element(Op::InsertBefore as u8);
-        id.encode(&mut self.buf, self.id_size);
-        self.buf.extend_slice(&num.to_le_bytes());
+    pub fn first_child(&mut self) {
+        self.msg.add_element(Op::FirstChild as u8);
     }
 
-    pub fn remove(&mut self, id: impl IntoId) {
-        self.check_id(&id);
-        self.buf.add_element(Op::Remove as u8);
-        id.encode(&mut self.buf, self.id_size);
+    pub fn next_sibling(&mut self) {
+        self.msg.add_element(Op::NextSibling as u8);
     }
 
-    pub fn set_event_listener(&mut self, event: impl IntoEvent, id: impl IntoId) {
-        self.check_id(&id);
-        self.buf.add_element(Op::SetEventListener as u8);
-        id.encode(&mut self.buf, self.id_size);
-        event.encode(&mut self.buf);
+    pub fn parent_node(&mut self) {
+        self.msg.add_element(Op::ParentNode as u8);
     }
 
-    pub fn remove_event_listener(&mut self, event: impl IntoEvent, id: impl IntoId) {
-        self.check_id(&id);
-        self.buf.add_element(Op::RemoveEventListener as u8);
-        id.encode(&mut self.buf, self.id_size);
-        event.encode(&mut self.buf);
+    pub fn store_with_id(&mut self, id: u64) {
+        let id = self.check_id(id);
+        self.msg.add_element(Op::StoreWithId as u8);
+        self.encode_id(id);
     }
 
-    pub fn set_id_size(&mut self, id_size: u8) {
-        self.id_size = id_size;
-        self.buf.add_element(Op::SetIdSize as u8);
-        self.buf.add_element(id_size);
+    pub fn set_last_node(&mut self, id: u64) {
+        let id = self.check_id(id);
+        self.msg.add_element(Op::SetLastNode as u8);
+        self.encode_id(id);
+    }
+
+    pub fn build_full_element(&mut self, el: impl ElementBuilderExt) {
+        self.msg.add_element(Op::BuildFullElement as u8);
+        el.encode(self, get_id_size());
+    }
+
+    #[inline]
+    pub(crate) fn encode_maybe_id(&mut self, id: Option<[u8; 8]>) {
+        match id {
+            Some(id) => {
+                self.msg.add_element(1);
+                self.encode_id(id);
+            }
+            None => {
+                self.msg.add_element(0);
+            }
+        }
+    }
+
+    #[inline]
+    pub(crate) fn encode_id(&mut self, bytes: [u8; 8]) {
+        self.msg.extend_slice(&bytes[..(get_id_size() as usize)]);
+    }
+
+    #[inline]
+    fn check_id(&mut self, id: u64) -> [u8; 8] {
+        let bytes = id.to_le_bytes();
+        let byte_size = id_size(bytes);
+        if byte_size > get_id_size() {
+            self.set_byte_size(byte_size);
+        }
+        bytes
+    }
+
+    #[inline]
+    fn set_byte_size(&mut self, byte_size: u8) {
+        set_id_size(byte_size);
+        self.msg.add_element(Op::SetIdSize as u8);
+        self.msg.add_element(byte_size);
+    }
+
+    pub(crate) fn encode_str(&mut self, string: &str) {
+        self.msg.extend_slice(&(string.len() as u16).to_le_bytes());
+        self.str_buf.extend_slice(string.as_bytes());
+    }
+
+    pub(crate) fn encode_cachable_str(&mut self, string: &str) {
+        self.msg.extend_slice(&(string.len() as u16).to_le_bytes());
+        self.str_buf.extend_slice(string.as_bytes());
+    }
+
+    #[inline]
+    pub fn flush(&mut self) {
+        assert_eq!(0usize.to_le_bytes().len(), 32 / 8);
+        self.msg.add_element(Op::Stop as u8);
+        unsafe {
+            let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_PTR_PTR);
+            *mut_ptr_ptr = self.msg.as_ref().as_ptr() as usize;
+            let mut_str_ptr_ptr: *mut usize = std::mem::transmute(STR_PTR_PTR);
+            *mut_str_ptr_ptr = self.str_buf.as_ref().as_ptr() as usize;
+            let mut_str_len_ptr: *mut usize = std::mem::transmute(STR_LEN_PTR);
+            *mut_str_len_ptr = self.str_buf.len() as usize;
+        }
+        work_last_created(wasm_bindgen::memory());
+        self.msg.clear();
+        self.str_buf.clear();
     }
 
     pub fn set_node(&mut self, id: u64, node: Node) {
-        set_node(id, node);
+        self.js_interpreter.SetNode(id, node);
     }
-
-    pub fn replace_with(&mut self, id: impl IntoId, num: u32) {
-        self.check_id(&id);
-        self.buf.add_element(Op::ReplaceWith as u8);
-        id.encode(&mut self.buf, self.id_size);
-        self.buf.extend_slice(&num.to_le_bytes());
-    }
-
-    pub fn set_text(&mut self, id: impl IntoId, text: &str) {
-        self.check_id(&id);
-        self.buf.add_element(Op::SetText as u8);
-        id.encode(&mut self.buf, self.id_size);
-        encode_str(&mut self.buf, text);
-    }
-
-    pub fn create_template(&mut self, builder: impl ManyElements, id: impl IntoId) {
-        self.check_id(&id);
-        self.check_id_size(builder.max_id_size());
-        self.buf.add_element(Op::CreateTemplate as u8);
-        id.encode(&mut self.buf, self.id_size);
-        builder.encode(&mut self.buf, self.id_size);
-    }
-
-    pub fn create_template_ref(&mut self, template_id: impl IntoId, node_id: impl IntoId) {
-        self.check_id(&template_id);
-        self.check_id(&node_id);
-        self.buf.add_element(Op::CreateTemplateRef as u8);
-        template_id.encode(&mut self.buf, self.id_size);
-        node_id.encode(&mut self.buf, self.id_size);
-    }
-
-    pub fn build(&self) {
-        work(self.buf.as_ref())
-    }
-}
-
-pub trait IntoId {
-    fn size(&self, id_size: u8) -> u8;
-    fn max_el_size(&self) -> u8;
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V, id_size: u8);
-}
-
-impl IntoId for u64 {
-    fn size(&self, id_size: u8) -> u8 {
-        id_size
-    }
-
-    fn max_el_size(&self) -> u8 {
-        self.to_le_bytes().max_el_size()
-    }
-
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V, id_size: u8) {
-        self.to_le_bytes().encode(v, id_size)
-    }
-}
-
-impl IntoId for [u8; 8] {
-    fn size(&self, id_size: u8) -> u8 {
-        id_size
-    }
-
-    fn max_el_size(&self) -> u8 {
-        let first_contentful_byte = self.iter().rev().position(|&b| b != 0).unwrap_or(8);
-        (8 - first_contentful_byte) as u8
-    }
-
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V, id_size: u8) {
-        v.add_element(1);
-        v.extend_slice(&self[..id_size as usize]);
-    }
-}
-
-impl IntoId for Option<u64> {
-    fn size(&self, id_size: u8) -> u8 {
-        self.map_or(1, |id| id.size(id_size))
-    }
-
-    fn max_el_size(&self) -> u8 {
-        self.map(|id| id.max_el_size()).unwrap_or(0)
-    }
-
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V, id_size: u8) {
-        if let Some(id) = self {
-            id.encode(v, id_size);
-        } else {
-            v.add_element(0);
-        }
-    }
-}
-
-impl IntoId for Option<[u8; 8]> {
-    fn size(&self, id_size: u8) -> u8 {
-        self.map_or(1, |id| id.size(id_size))
-    }
-
-    fn max_el_size(&self) -> u8 {
-        self.map(|id| id.max_el_size()).unwrap_or(0)
-    }
-
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V, id_size: u8) {
-        if let Some(id) = self {
-            id.encode(v, id_size);
-        } else {
-            v.add_element(0);
-        }
-    }
-}
-
-impl IntoId for (u64, u64) {
-    fn size(&self, id_size: u8) -> u8 {
-        self.0.size(id_size) + self.1.size(id_size)
-    }
-
-    fn max_el_size(&self) -> u8 {
-        self.0.max_el_size().max(self.1.max_el_size())
-    }
-
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V, id_size: u8) {
-        v.add_element(2);
-        let (id1, id2) = (self.0.to_le_bytes(), self.1.to_le_bytes());
-        v.extend_slice(&id1[..id_size as usize]);
-        v.extend_slice(&id2[..id_size as usize]);
-    }
-}
-
-pub fn encode_str<V: VecLike<Item = u8>>(buf: &mut V, s: &str) {
-    let b = s.as_bytes();
-    let len = b.len();
-    buf.add_element(len as u8);
-    buf.extend_slice(b);
 }

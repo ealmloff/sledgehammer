@@ -1,57 +1,62 @@
 #![allow(non_camel_case_types)]
 
 // mod attrs;
-mod attribute;
-mod builder;
-mod element;
-mod event;
-mod value;
+pub mod attribute;
+pub mod builder;
+pub mod element;
+pub mod event;
+pub mod value;
 
 pub use attribute::*;
 pub use builder::*;
 pub use element::*;
 
-use dioxus_interpreter_js::Interpreter;
+use wasm_bindgen::prelude::*;
+use web_sys::Node;
 
-use easybench_wasm::bench as wasm_bench;
-use wasm_bindgen::{prelude::*, JsCast};
-use web_sys::{console, Document, HtmlHeadElement, Node, Performance};
+use web_sys::Element;
 
-static mut PTR: u32 = 0;
-static mut PTR_PTR: *const u32 = unsafe { &PTR } as *const u32;
-static mut LEN_PTR: u32 = 0;
-static mut LEN_PTR_PTR: *const u32 = unsafe { &LEN_PTR } as *const u32;
+#[used]
+static mut MSG_PTR: usize = 0;
+#[used]
+static mut MSG_PTR_PTR: *const usize = unsafe { &MSG_PTR } as *const usize;
+#[used]
+static mut STR_PTR: usize = 0;
+#[used]
+static mut STR_PTR_PTR: *const usize = unsafe { &STR_PTR } as *const usize;
+#[used]
+static mut STR_LEN: usize = 0;
+#[used]
+static mut STR_LEN_PTR: *const usize = unsafe { &STR_LEN } as *const usize;
+static mut ID_SIZE: u8 = 1;
 
 #[wasm_bindgen(module = "/interpreter.js")]
 extern "C" {
-    fn interperter_init(mem: JsValue, ptr: u32, size: u32);
+    fn work_last_created(mem: JsValue);
 
-    #[wasm_bindgen(js_name = "work")]
-    pub fn work_inner();
+    pub type JsInterpreter;
 
-    pub fn set_node(id: u64, node: Node);
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        arg: Element,
+        mem: JsValue,
+        msg_ptr: usize,
+        str_ptr: usize,
+        str_len_ptr: usize,
+    ) -> JsInterpreter;
 
-    pub fn bench(modifications: usize) -> f64;
+    #[wasm_bindgen(method)]
+    pub fn Work(this: &JsInterpreter, mem: JsValue);
 
-    pub fn bench_template();
-
-    pub fn prep();
+    #[wasm_bindgen(method)]
+    pub fn SetNode(this: &JsInterpreter, id: u64, node: Node);
 }
 
-pub fn work(data: &[u8]) {
-    let ptr = data.as_ptr();
-    let len = data.len();
-    unsafe {
-        PTR = ptr as u32;
-        LEN_PTR = len as u32
-    };
-    work_inner();
-
-    let _ = data;
+fn get_id_size() -> u8 {
+    unsafe { ID_SIZE }
 }
-
-pub fn init() {
+fn set_id_size(size: u8) {
     unsafe {
-        interperter_init(wasm_bindgen::memory(), PTR_PTR as u32, LEN_PTR_PTR as u32);
+        ID_SIZE = size;
     }
 }

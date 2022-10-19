@@ -1,12 +1,12 @@
 use std::ops::RangeInclusive;
 
-use crate::builder::{encode_str, VecLike};
+use crate::{builder::VecLike, MsgBuilder};
 
 pub trait IntoValue {
     const LEN: RangeInclusive<Option<usize>>;
 
     fn size(&self) -> usize;
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V);
+    fn encode<V: VecLike<u8>>(self, v: &mut MsgBuilder<V>);
 }
 
 impl IntoValue for bool {
@@ -16,8 +16,8 @@ impl IntoValue for bool {
         1
     }
 
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V) {
-        v.add_element(if self { 255 } else { 0 });
+    fn encode<V: VecLike<u8>>(self, v: &mut MsgBuilder<V>) {
+        v.msg.add_element(if self { 255 } else { 0 });
     }
 }
 
@@ -28,7 +28,7 @@ impl<S: AsRef<str>> IntoValue for &S {
         1 + self.as_ref().as_bytes().len()
     }
 
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V) {
-        encode_str(v, self.as_ref());
+    fn encode<V: VecLike<u8>>(self, v: &mut MsgBuilder<V>) {
+        v.encode_str(self.as_ref());
     }
 }

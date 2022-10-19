@@ -1,11 +1,12 @@
 #![allow(non_camel_case_types)]
 
-use crate::builder::{encode_str, VecLike};
+use crate::builder::VecLike;
 use crate::value::IntoValue;
+use crate::MsgBuilder;
 
 pub trait IntoAttribue {
     fn size(&self) -> usize;
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V);
+    fn encode<V: VecLike<u8>>(self, v: &mut MsgBuilder<V>);
 }
 
 impl IntoAttribue for Attribute {
@@ -13,8 +14,8 @@ impl IntoAttribue for Attribute {
         1
     }
 
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V) {
-        v.add_element(self as u8)
+    fn encode<V: VecLike<u8>>(self, v: &mut MsgBuilder<V>) {
+        v.msg.add_element(self as u8)
     }
 }
 
@@ -23,16 +24,17 @@ impl<S: AsRef<str>> IntoAttribue for S {
         2 + self.as_ref().len()
     }
 
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V) {
-        v.add_element(255);
-        encode_str(v, self.as_ref());
+    fn encode<V: VecLike<u8>>(self, v: &mut MsgBuilder<V>) {
+        v.msg.add_element(255);
+        v.encode_cachable_str(self.as_ref());
     }
 }
 
+#[allow(clippy::len_without_is_empty)]
 pub trait ManyAttrs {
     fn len(&self) -> usize;
     fn size(&self) -> usize;
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V);
+    fn encode<V: VecLike<u8>>(self, v: &mut MsgBuilder<V>);
 }
 
 impl ManyAttrs for () {
@@ -40,8 +42,8 @@ impl ManyAttrs for () {
         0
     }
 
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V) {
-        v.add_element(<Self as ManyAttrs>::len(&self) as u8);
+    fn encode<V: VecLike<u8>>(self, v: &mut MsgBuilder<V>) {
+        v.msg.add_element(<Self as ManyAttrs>::len(&self) as u8);
     }
 
     #[inline]
@@ -65,8 +67,8 @@ macro_rules! impl_many_attrs {
                 0 $(+ 1 + $i.size()*0)*
             }
 
-            fn encode<V: VecLike<Item = u8>>(self, v: &mut V) {
-                v.add_element(self.len() as u8);
+            fn encode<V: VecLike<u8>>(self, v: &mut MsgBuilder<V>) {
+                v.msg.add_element(self.len() as u8);
                 let ($(($i, $m),)+) = self;
                 $($i.encode(v);$m.encode(v);)+
             }

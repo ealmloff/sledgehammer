@@ -12,9 +12,6 @@ wasm-bindgen = { version = "0.2" }
 web-sys = { version = "*", features = ["console", "Window", "Document", "Element", "HtmlElement", "HtmlHeadElement", "Performance"] }
 smallvec = { version = "1.9.0", features = ["const_generics", "const_new"] }
 js-sys = "0.3"
-dioxus-interpreter-js = { path = "c:/users/desktop/github/dioxus/packages/interpreter", features = ["web"] }
-dioxus-core = { path = "c:/users/desktop/github/dioxus/packages/core" }
-easybench-wasm = "0.2.1"
 
 [profile.release]
 lto = true

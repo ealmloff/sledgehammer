@@ -1,14 +1,16 @@
 #![allow(non_camel_case_types)]
+#![allow(dead_code)]
 
 use std::ops::RangeInclusive;
 
-use crate::builder::{encode_str, VecLike};
+use crate::{builder::VecLike, MsgBuilder};
 
+#[allow(clippy::len_without_is_empty)]
 pub trait IntoEvent {
     const LEN: RangeInclusive<Option<usize>>;
 
     fn len(&self) -> usize;
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V);
+    fn encode<V: VecLike<u8>>(self, v: &mut MsgBuilder<V>);
 }
 
 impl IntoEvent for Event {
@@ -18,8 +20,8 @@ impl IntoEvent for Event {
         1
     }
 
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V) {
-        v.add_element(self as u8)
+    fn encode<V: VecLike<u8>>(self, v: &mut MsgBuilder<V>) {
+        v.msg.add_element(self as u8)
     }
 }
 
@@ -30,9 +32,9 @@ impl<S: AsRef<str>> IntoEvent for S {
         self.as_ref().len()
     }
 
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V) {
-        v.add_element(255);
-        encode_str(v, self.as_ref());
+    fn encode<V: VecLike<u8>>(self, v: &mut MsgBuilder<V>) {
+        v.msg.add_element(255);
+        v.encode_str(self.as_ref());
     }
 }
 

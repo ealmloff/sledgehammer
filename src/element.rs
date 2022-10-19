@@ -4,14 +4,15 @@ use std::ops::RangeInclusive;
 
 use crate::{
     attribute::ManyAttrs,
-    builder::{encode_str, IntoId, MsgBuilder, VecLike},
+    builder::{MsgBuilder, VecLike},
+    id_size,
 };
 
 pub trait IntoElement {
     const LEN: RangeInclusive<Option<usize>>;
 
     fn size(&self) -> usize;
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V);
+    fn encode<V: VecLike<u8>>(self, v: &mut MsgBuilder<V>);
 }
 
 impl IntoElement for Element {
@@ -21,8 +22,8 @@ impl IntoElement for Element {
         1
     }
 
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V) {
-        v.add_element(self as u8)
+    fn encode<V: VecLike<u8>>(self, v: &mut MsgBuilder<V>) {
+        v.msg.add_element(self as u8)
     }
 }
 
@@ -33,16 +34,17 @@ impl<S: AsRef<str>> IntoElement for S {
         self.as_ref().len() + 2
     }
 
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V) {
-        v.add_element(255);
-        encode_str(v, self.as_ref());
+    fn encode<V: VecLike<u8>>(self, v: &mut MsgBuilder<V>) {
+        v.msg.add_element(255);
+        v.encode_str(self.as_ref());
     }
 }
 
+#[allow(clippy::len_without_is_empty)]
 pub trait ManyElements {
     fn size(&self, id_size: u8) -> usize;
     fn len(&self) -> usize;
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V, id_size: u8);
+    fn encode<V: VecLike<u8>>(self, v: &mut MsgBuilder<V>, id_size: u8);
     fn max_id_size(&self) -> u8;
 }
 
@@ -55,8 +57,8 @@ impl ManyElements for () {
         0
     }
 
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V, _: u8) {
-        v.add_element(<Self as ManyElements>::len(&self) as u8);
+    fn encode<V: VecLike<u8>>(self, v: &mut MsgBuilder<V>, _: u8) {
+        v.msg.add_element(<Self as ManyElements>::len(&self) as u8);
     }
 
     fn max_id_size(&self) -> u8 {
@@ -78,8 +80,8 @@ macro_rules! impl_many_elements {
                 0 $(+ 1+ 0*$i.size(0))*
             }
 
-            fn encode<V: VecLike<Item = u8>>(self, v: &mut V, id_size: u8) {
-                v.add_element(self.len() as u8);
+            fn encode<V: VecLike<u8>>(self, v: &mut MsgBuilder<V>, id_size: u8) {
+                v.msg.add_element(self.len() as u8);
                 let ($($i,)+) = self;
                 $($i.encode(v, id_size);)+
             }
@@ -178,9 +180,7 @@ impl<K: IntoElement, A: ManyAttrs, E: ManyElements> ElementBuilder<K, A, E> {
 
 pub trait ElementBuilderExt {
     fn size(&self, id_size: u8) -> usize;
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V, id_size: u8);
-    fn build(self);
-    fn create_template(self, id: u64);
+    fn encode<V: VecLike<u8>>(self, v: &mut MsgBuilder<V>, id_size: u8);
     fn max_id_size(&self) -> u8;
 }
 
@@ -189,37 +189,27 @@ impl<K: IntoElement, A: ManyAttrs, E: ManyElements> ElementBuilderExt for Elemen
         2 + self.kind.size()
             + self.attrs.size()
             + self.children.size(id_size)
-            + self.id.max_el_size() as usize
+            + if self.id.is_some() { id_size } else { 1 } as usize
     }
 
-    fn encode<V: VecLike<Item = u8>>(self, v: &mut V, id_size: u8) {
-        self.id.encode(v, id_size);
+    fn encode<V: VecLike<u8>>(self, v: &mut MsgBuilder<V>, id_size: u8) {
+        v.encode_maybe_id(self.id);
         self.kind.encode(v);
         self.attrs.encode(v);
         self.children.encode(v, id_size);
     }
 
-    fn create_template(self, id: u64) {
-        let id_size = self.max_id_size();
-        let v = Vec::with_capacity(self.size(id_size) + 1);
-        let mut msg = MsgBuilder::with(v);
-        msg.create_template((self,), id);
-        msg.build();
-    }
-
-    fn build(self) {
-        let id_size = self.max_id_size();
-        let v = Vec::with_capacity(self.size(id_size) + 1);
-        let mut msg = MsgBuilder::with(v);
-        msg.create_full_element(self);
-        msg.build();
-    }
-
     fn max_id_size(&self) -> u8 {
-        self.id.max_el_size().max(self.children.max_id_size())
+        if let Some(id) = self.id {
+            id_size(id)
+        } else {
+            1
+        }
+        .max(self.children.max_id_size())
     }
 }
 
+#[allow(unused)]
 pub enum Element {
     a,
     abbr,
