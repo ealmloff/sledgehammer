@@ -27,6 +27,7 @@ export class JsInterpreter {
         this.strPos = 0;
         this.decoder = new TextDecoder();
         window.interpreter = this;
+        this.updateDecodeIdFn();
     }
 
     NeedsMemory() {
@@ -40,9 +41,9 @@ export class JsInterpreter {
 
     Work() {
         this.u8BufPos = this.view.getUint32(this.ptr_ptr, true);
-        ptr = this.view.getUint32(this.str_ptr_ptr, true);
         len = this.view.getUint32(this.str_len_ptr, true);
         if (len > 0) {
+            ptr = this.view.getUint32(this.str_ptr_ptr, true);
             // for small strings decoding them in javascript to avoid the overhead of native calls is faster
             if (len < 25) {
                 this.strings = this.utf8Decode(ptr, len);
@@ -50,8 +51,8 @@ export class JsInterpreter {
             else {
                 this.strings = this.decoder.decode(new DataView(this.view.buffer, ptr, len));
             }
+            this.strPos = 0;
         }
-        this.strPos = 0;
         // this is faster than a while(true) loop
         for (; ;) {
             switch (this.view.getUint8(this.u8BufPos++)) {
@@ -60,39 +61,51 @@ export class JsInterpreter {
                     parent = this.getNode();
                     len = this.decodeU32();
                     for (i = 0; i < len; i++) {
-                        const child = this.nodes[this.decodeId()];
-                        parent.appendChild(child);
+                        parent.appendChild(this.nodes[this.decodeId()]);
                     }
                     break;
                 // replace with
                 case 1:
                     parent = this.getNode();
                     len = this.decodeU32();
-                    children = [];
-                    for (i = 0; i < len; i++) {
-                        children.push(this.nodes[this.decodeId()]);
+                    if (len === 0) {
+                        parent.replaceWith(this.nodes[this.decodeId()]);
                     }
-                    parent.replaceWith(...children);
+                    else {
+                        children = [];
+                        for (i = 0; i < len; i++) {
+                            children.push(this.nodes[this.decodeId()]);
+                        }
+                        parent.replaceWith(...children);
+                    }
                     break;
                 // insert after
                 case 2:
                     parent = this.getNode();
                     len = this.decodeU32();
-                    children = [];
-                    for (i = 0; i < len; i++) {
-                        children.push(this.nodes[this.decodeId()]);
+                    if (len === 0) {
+                        parent.after(this.nodes[this.decodeId()]);
+                    } else {
+                        children = [];
+                        for (i = 0; i < len; i++) {
+                            children.push(this.nodes[this.decodeId()]);
+                        }
+                        parent.after(...children);
                     }
-                    parent.after(...children);
                     break;
                 // insert before
                 case 3:
                     parent = this.getNode();
                     len = this.decodeU32();
-                    children = [];
-                    for (i = 0; i < len; i++) {
-                        children.push(this.nodes[this.decodeId()]);
+                    if (len === 0) {
+                        parent.before(this.nodes[this.decodeId()]);
+                    } else {
+                        children = [];
+                        for (i = 0; i < len; i++) {
+                            children.push(this.nodes[this.decodeId()]);
+                        }
+                        parent.before(...children);
                     }
-                    parent.before(...children);
                     break;
                 // remove
                 case 4:
@@ -136,8 +149,7 @@ export class JsInterpreter {
                 // set text
                 case 10:
                     node = this.getNode();
-                    text = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
-                    node.textContent = text;
+                    node.textContent = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
                     break;
                 // set attribute
                 case 11:
@@ -224,6 +236,7 @@ export class JsInterpreter {
                 // set id size
                 case 20:
                     this.idSize = this.view.getUint8(this.u8BufPos++);
+                    this.updateDecodeIdFn();
                     break;
                 // stop
                 case 21:
@@ -258,17 +271,14 @@ export class JsInterpreter {
                 case 254:
                     attr = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
                     ns = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
+                    value = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
                     parent_element.setAttributeNS(ns, attr, value);
                     break;
                 case 255:
-                    attr = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
-                    value = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
-                    parent_element.setAttribute(attr, value);
+                    parent_element.setAttribute(this.strings.substring(this.strPos, this.strPos += this.decodeU16()), this.strings.substring(this.strPos, this.strPos += this.decodeU16()));
                     break;
                 default:
-                    attr = convertAttribute(attr);
-                    value = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
-                    parent_element.setAttribute(attr, value);
+                    parent_element.setAttribute(convertAttribute(attr), this.strings.substring(this.strPos, this.strPos += this.decodeU16()));
                     break;
             }
         }
@@ -312,22 +322,30 @@ export class JsInterpreter {
         }
     }
 
-    decodeId() {
+    updateDecodeIdFn() {
         switch (this.idSize) {
             case 1:
-                return this.view.getUint8(this.u8BufPos++);
+                this.decodeId = function () {
+                    return this.view.getUint8(this.u8BufPos++);
+                };
             case 2:
-                this.u8BufPos += 2;
-                return this.view.getUint16(this.u8BufPos - 2, true);
+                this.decodeId = function () {
+                    this.u8BufPos += 2;
+                    return this.view.getUint16(this.u8BufPos - 2, true);
+                };
             case 4:
-                this.u8BufPos += 4;
-                return this.view.getUint32(this.u8BufPos - 4, true);
+                this.decodeId = function () {
+                    this.u8BufPos += 4;
+                    return this.view.getUint32(this.u8BufPos - 4, true);
+                };
             default:
-                let val = this.view.getUint8(this.u8BufPos++);
-                for (let i = 1; i < this.idSize; i++) {
-                    val |= this.view.getUint8(this.u8BufPos++) << (i * 8);
-                }
-                return val;
+                this.decodeId = function () {
+                    let val = this.view.getUint8(this.u8BufPos++);
+                    for (let i = 1; i < this.idSize; i++) {
+                        val |= this.view.getUint8(this.u8BufPos++) << (i * 8);
+                    }
+                    return val;
+                };
         }
     }
 
