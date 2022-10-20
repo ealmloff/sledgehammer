@@ -1,5 +1,5 @@
 [package]
-name = "fast_dom"
+name = "sledgehammer"
 version = "0.1.0"
 authors = ["Evan Almloff <ealmlof1@stumail.jccc.edu>"]
 edition = "2021"
@@ -12,8 +12,3 @@ wasm-bindgen = { version = "0.2" }
 web-sys = { version = "*", features = ["console", "Window", "Document", "Element", "HtmlElement", "HtmlHeadElement", "Performance"] }
 smallvec = { version = "1.9.0", features = ["const_generics", "const_new"] }
 js-sys = "0.3"
-
-[profile.release]
-lto = true
-codegen-units = 1
-panic = "abort"
