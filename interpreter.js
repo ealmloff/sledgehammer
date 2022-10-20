@@ -157,8 +157,12 @@ export class JsInterpreter {
                     break;
                 // set text
                 case 10:
-                    node = this.getNode();
-                    node.textContent = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
+                    if (this.view.getUint8(this.u8BufPos++) === 1) {
+                        this.nodes[this.decodeId()].textContent = this.strings.substring(this.strPos, this.strPos += this.decodeU16());;
+                    }
+                    else {
+                        this.lastNode.textContent = this.strings.substring(this.strPos, this.strPos += this.decodeU16());;
+                    }
                     break;
                 // set attribute
                 case 11:
@@ -177,14 +181,10 @@ export class JsInterpreter {
                             }
                             break;
                         case 255:
-                            attr = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
-                            value = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
-                            node.setAttribute(attr, value);
+                            node.setAttribute(this.strings.substring(this.strPos, this.strPos += this.decodeU16()), this.strings.substring(this.strPos, this.strPos += this.decodeU16()));
                             break;
                         default:
-                            attr = convertAttribute(attr);
-                            value = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
-                            node.setAttribute(attr, value);
+                            node.setAttribute(convertAttribute(attr), this.strings.substring(this.strPos, this.strPos += this.decodeU16()));
                             break;
                     }
                     break;
@@ -198,12 +198,10 @@ export class JsInterpreter {
                             node.removeAttributeNS(this.strings.substring(this.strPos, this.strPos += this.decodeU16()), attr);
                             break;
                         case 255:
-                            attr = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
-                            node.removeAttributeNS(ns, attr);
+                            node.removeAttribute(this.strings.substring(this.strPos, this.strPos += this.decodeU16()));
                             break;
                         default:
-                            attr = convertAttribute(attr);
-                            node.removeAttributeNS(ns, attr);
+                            node.removeAttribute(convertAttribute(attr));
                             break;
                     }
                     break;
@@ -337,24 +335,19 @@ export class JsInterpreter {
                 this.decodeId = function () {
                     return this.view.getUint8(this.u8BufPos++);
                 };
+                break;
             case 2:
                 this.decodeId = function () {
                     this.u8BufPos += 2;
                     return this.view.getUint16(this.u8BufPos - 2, true);
                 };
+                break;
             case 4:
                 this.decodeId = function () {
                     this.u8BufPos += 4;
                     return this.view.getUint32(this.u8BufPos - 4, true);
                 };
-            default:
-                this.decodeId = function () {
-                    let val = this.view.getUint8(this.u8BufPos++);
-                    for (let i = 1; i < this.idSize; i++) {
-                        val |= this.view.getUint8(this.u8BufPos++) << (i * 8);
-                    }
-                    return val;
-                };
+                break;
         }
     }
 

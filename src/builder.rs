@@ -371,9 +371,16 @@ impl<V: VecLike> MsgBuilder<V> {
 
     #[inline]
     fn set_byte_size(&mut self, byte_size: u8) {
-        set_id_size(byte_size);
+        let nearest_larger_power_of_two = match byte_size {
+            1 => 1,
+            2 => 2,
+            3 => 4,
+            4 => 4,
+            _ => unreachable!(),
+        };
+        set_id_size(nearest_larger_power_of_two);
         self.msg.add_element(Op::SetIdSize as u8);
-        self.msg.add_element(byte_size);
+        self.msg.add_element(nearest_larger_power_of_two);
     }
 
     pub(crate) fn encode_str(&mut self, string: Arguments) {
