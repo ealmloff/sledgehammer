@@ -385,14 +385,6 @@ export class JsInterpreter {
 
         return out;
     }
-
-    matches(id, selector) {
-        return this.nodes[id].matches(selector);
-    }
-
-    id(id) {
-        return this.nodes[id].id();
-    }
 }
 
 const els = [

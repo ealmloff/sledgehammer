@@ -56,12 +56,6 @@ extern "C" {
     pub fn UpdateMemory(this: &JsInterpreter, mem: JsValue);
 
     #[wasm_bindgen(method)]
-    pub fn matches(this: &JsInterpreter, id: u32, selector: &str) -> bool;
-
-    #[wasm_bindgen(method)]
-    pub fn id(this: &JsInterpreter, id: u32) -> String;
-
-    #[wasm_bindgen(method)]
     pub fn NeedsMemory(this: &JsInterpreter) -> bool;
 
     #[wasm_bindgen(method)]
