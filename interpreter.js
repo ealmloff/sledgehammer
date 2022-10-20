@@ -35,7 +35,6 @@ export class JsInterpreter {
     }
 
     UpdateMemory(mem) {
-        console.log("Updating memory");
         this.view = new DataView(mem.buffer);
     }
 
