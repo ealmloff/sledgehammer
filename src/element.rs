@@ -146,14 +146,14 @@ impl_many_elements!((
 )11);
 
 pub struct ElementBuilder<K: IntoElement, A: ManyAttrs, E: ManyElements> {
-    id: Option<[u8; 8]>,
+    id: Option<[u8; 4]>,
     kind: K,
     attrs: A,
     children: E,
 }
 
 impl<K: IntoElement, A: ManyAttrs, E: ManyElements> ElementBuilder<K, A, E> {
-    pub const fn new(id: Option<u64>, kind: K, attrs: A, children: E) -> Self {
+    pub const fn new(id: Option<u32>, kind: K, attrs: A, children: E) -> Self {
         Self {
             id: if let Some(id) = id {
                 Some(id.to_le_bytes())

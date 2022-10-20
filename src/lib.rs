@@ -59,7 +59,7 @@ extern "C" {
     pub fn NeedsMemory(this: &JsInterpreter) -> bool;
 
     #[wasm_bindgen(method)]
-    pub fn SetNode(this: &JsInterpreter, id: u64, node: Node);
+    pub fn SetNode(this: &JsInterpreter, id: u32, node: Node);
 }
 
 fn get_id_size() -> u8 {

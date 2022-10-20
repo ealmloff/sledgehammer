@@ -322,9 +322,6 @@ export class JsInterpreter {
             case 4:
                 this.u8BufPos += 4;
                 return this.view.getUint32(this.u8BufPos - 4, true);
-            case 8:
-                this.u8BufPos += 8;
-                return this.view.getUint64(this.u8BufPos - 8, true);
             default:
                 let val = this.view.getUint8(this.u8BufPos++);
                 for (let i = 1; i < this.idSize; i++) {
@@ -332,11 +329,6 @@ export class JsInterpreter {
                 }
                 return val;
         }
-    }
-
-    decodeU64() {
-        this.u8BufPos += 8;
-        return this.view.getUint64(this.u8BufPos - 8, true);
     }
 
     decodeU32() {
