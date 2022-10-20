@@ -3,7 +3,7 @@ export function work_last_created() {
 }
 
 export function last_needs_memory() {
-    return window.interpreter.NeedsMemory();
+    return window.interpreter.view.buffer.byteLength === 0;
 }
 
 export function update_last_memory(mem) {
@@ -13,13 +13,15 @@ export function update_last_memory(mem) {
 let parent, len, children, node, ns, attr, text, i, name, value, element, ptr;
 
 export class JsInterpreter {
-    constructor(root, mem, _ptr_ptr, _str_ptr_ptr, _str_len_ptr) {
+    constructor(root, mem, _ptr_updated_ptr, _ptr_ptr, _str_ptr_ptr, _str_len_ptr) {
         this.root = root;
         this.lastNode = root;
         this.nodes = [root];
         this.parents = [];
         this.view = new DataView(mem.buffer);
         this.idSize = 1;
+        this.last_start_pos;
+        this.ptr_updated_ptr = _ptr_updated_ptr;
         this.ptr_ptr = _ptr_ptr;
         this.str_ptr_ptr = _str_ptr_ptr;
         this.str_len_ptr = _str_len_ptr;
@@ -39,7 +41,10 @@ export class JsInterpreter {
     }
 
     Work() {
-        this.u8BufPos = this.view.getUint32(this.ptr_ptr, true);
+        if (this.view.getUint8(this.ptr_updated_ptr) === 1) {
+            this.last_start_pos = this.view.getUint32(this.ptr_ptr, true);
+        }
+        this.u8BufPos = this.last_start_pos;
         len = this.view.getUint32(this.str_len_ptr, true);
         if (len > 0) {
             ptr = this.view.getUint32(this.str_ptr_ptr, true);
@@ -108,7 +113,12 @@ export class JsInterpreter {
                     break;
                 // remove
                 case 4:
-                    this.getNode().remove();
+                    if (this.view.getUint8(this.u8BufPos++) === 1) {
+                        this.nodes[this.decodeId()].remove();
+                    }
+                    else {
+                        this.lastNode.remove();
+                    }
                     break;
                 // create text node
                 case 5:

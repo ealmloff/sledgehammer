@@ -4,7 +4,8 @@ use web_sys::{Element, Node};
 
 use crate::{
     get_id_size, last_needs_memory, set_id_size, update_last_memory, work_last_created,
-    ElementBuilderExt, IntoAttribue, JsInterpreter, MSG_PTR_PTR, STR_LEN_PTR, STR_PTR_PTR,
+    ElementBuilderExt, IntoAttribue, JsInterpreter, MSG_POS_UPDATED_PTR, MSG_PTR_PTR, STR_LEN_PTR,
+    STR_PTR_PTR,
 };
 
 pub(crate) fn id_size(bytes: [u8; 4]) -> u8 {
@@ -88,6 +89,7 @@ impl<V: VecLike + AsRef<[u8]>> MsgBuilder<V> {
             JsInterpreter::new(
                 el,
                 wasm_bindgen::memory(),
+                MSG_POS_UPDATED_PTR as usize,
                 MSG_PTR_PTR as usize,
                 STR_PTR_PTR as usize,
                 STR_LEN_PTR as usize,
@@ -392,9 +394,22 @@ impl<V: VecLike> MsgBuilder<V> {
     pub fn flush(&mut self) {
         assert_eq!(0usize.to_le_bytes().len(), 32 / 8);
         self.msg.add_element(Op::Stop as u8);
+        let msg_ptr = self.msg.as_ref().as_ptr() as usize;
+        // the pointer will only be updated when the message vec is resized, so we have a flag to check if the pointer has changed to avoid unnecessary decoding
+        if unsafe { *MSG_PTR_PTR } != msg_ptr || unsafe { *MSG_POS_UPDATED_PTR } == 2 {
+            unsafe {
+                let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_PTR_PTR);
+                *mut_ptr_ptr = msg_ptr;
+                let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_POS_UPDATED_PTR);
+                *mut_ptr_ptr = 1;
+            }
+        } else {
+            unsafe {
+                let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_POS_UPDATED_PTR);
+                *mut_ptr_ptr = 0;
+            }
+        }
         unsafe {
-            let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_PTR_PTR);
-            *mut_ptr_ptr = self.msg.as_ref().as_ptr() as usize;
             let mut_str_ptr_ptr: *mut usize = std::mem::transmute(STR_PTR_PTR);
             *mut_str_ptr_ptr = self.str_buf.as_ref().as_ptr() as usize;
             let mut_str_len_ptr: *mut usize = std::mem::transmute(STR_LEN_PTR);

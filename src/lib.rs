@@ -21,6 +21,10 @@ static mut MSG_PTR: usize = 0;
 #[used]
 static mut MSG_PTR_PTR: *const usize = unsafe { &MSG_PTR } as *const usize;
 #[used]
+static mut MSG_POS_UPDATED: u8 = 2;
+#[used]
+static mut MSG_POS_UPDATED_PTR: *const u8 = unsafe { &MSG_POS_UPDATED } as *const u8;
+#[used]
 static mut STR_PTR: usize = 0;
 #[used]
 static mut STR_PTR_PTR: *const usize = unsafe { &STR_PTR } as *const usize;
@@ -44,6 +48,7 @@ extern "C" {
     pub fn new(
         arg: Element,
         mem: JsValue,
+        msg_pos_updated_ptr: usize,
         msg_ptr: usize,
         str_ptr: usize,
         str_len_ptr: usize,
