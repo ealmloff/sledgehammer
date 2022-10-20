@@ -1,4 +1,5 @@
-use smallvec::SmallVec;
+use std::{fmt::Arguments, io::Write};
+
 use web_sys::{Element, Node};
 
 use crate::{
@@ -12,27 +13,29 @@ pub(crate) fn id_size(bytes: [u8; 8]) -> u8 {
 }
 
 #[allow(clippy::len_without_is_empty)]
-pub trait VecLike<Item>: AsRef<[Item]> {
-    fn add_element(&mut self, element: Item);
+pub trait VecLike: AsRef<[u8]> + Write {
+    fn add_element(&mut self, element: u8);
 
     #[inline]
-    fn extend_owned_slice<const N: usize>(&mut self, slice: [Item; N]) {
+    fn extend_owned_slice<const N: usize>(&mut self, slice: [u8; N]) {
         self.extend_slice(&slice)
     }
 
-    fn extend_slice(&mut self, slice: &[Item]);
+    fn extend_slice(&mut self, slice: &[u8]);
 
     fn len(&self) -> usize;
 
     fn clear(&mut self);
+
+    fn set(&mut self, index: usize, value: u8);
 }
 
-impl<Item: Copy> VecLike<Item> for Vec<Item> {
-    fn add_element(&mut self, element: Item) {
+impl VecLike for Vec<u8> {
+    fn add_element(&mut self, element: u8) {
         self.push(element);
     }
 
-    fn extend_slice(&mut self, slice: &[Item]) {
+    fn extend_slice(&mut self, slice: &[u8]) {
         self.extend(slice.iter().copied());
     }
 
@@ -43,33 +46,37 @@ impl<Item: Copy> VecLike<Item> for Vec<Item> {
     fn clear(&mut self) {
         self.clear();
     }
-}
 
-impl<const N: usize, Item: Copy> VecLike<Item> for SmallVec<[Item; N]> {
-    fn add_element(&mut self, element: Item) {
-        self.push(element);
-    }
-
-    fn extend_slice(&mut self, slice: &[Item]) {
-        self.extend_from_slice(slice);
-    }
-
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    fn clear(&mut self) {
-        self.clear();
+    fn set(&mut self, index: usize, value: u8) {
+        self[index] = value;
     }
 }
 
-pub struct MsgBuilder<V: VecLike<u8> + AsRef<[u8]> = Vec<u8>> {
+// impl<const N: usize> VecLike for SmallVec<[u8; N]> {
+//     fn add_element(&mut self, element: u8) {
+//         self.push(element);
+//     }
+
+//     fn extend_slice(&mut self, slice: &[u8]) {
+//         self.extend_from_slice(slice);
+//     }
+
+//     fn len(&self) -> usize {
+//         self.len()
+//     }
+
+//     fn clear(&mut self) {
+//         self.clear();
+//     }
+// }
+
+pub struct MsgBuilder<V: VecLike + AsRef<[u8]> = Vec<u8>> {
     pub(crate) msg: V,
     pub(crate) str_buf: V,
     pub(crate) js_interpreter: JsInterpreter,
 }
 
-impl<V: VecLike<u8> + AsRef<[u8]>> MsgBuilder<V> {
+impl<V: VecLike + AsRef<[u8]>> MsgBuilder<V> {
     pub fn with(v: V, v2: V, el: Element) -> Self {
         format!(
             "init: {:?}, {:?}, {:?}",
@@ -257,7 +264,7 @@ enum Op {
     BuildFullElement = 22,
 }
 
-impl<V: VecLike<u8>> MsgBuilder<V> {
+impl<V: VecLike> MsgBuilder<V> {
     pub fn append_children(&mut self, root: Option<u64>, children: Vec<u64>) {
         let root = root.map(|id| self.check_id(id));
         for child in &children {
@@ -317,7 +324,7 @@ impl<V: VecLike<u8>> MsgBuilder<V> {
         self.encode_maybe_id(root);
     }
 
-    pub fn create_text_node(&mut self, text: &str, id: Option<u64>) {
+    pub fn create_text_node(&mut self, text: Arguments, id: Option<u64>) {
         let root = id.map(|id| self.check_id(id));
         self.msg.add_element(Op::CreateTextNode as u8);
         self.encode_str(text);
@@ -326,8 +333,8 @@ impl<V: VecLike<u8>> MsgBuilder<V> {
 
     pub fn create_element(
         &mut self,
-        tag: &'static str,
-        ns: Option<&'static str>,
+        tag: Arguments,
+        ns: Option<Arguments>,
         id: Option<u64>,
         children: u32,
     ) {
@@ -350,14 +357,14 @@ impl<V: VecLike<u8>> MsgBuilder<V> {
         self.encode_maybe_id(root);
     }
 
-    pub fn set_text(&mut self, text: &str, root: Option<u64>) {
+    pub fn set_text(&mut self, text: Arguments, root: Option<u64>) {
         let root = root.map(|id| self.check_id(id));
         self.msg.add_element(Op::SetText as u8);
         self.encode_maybe_id(root);
         self.encode_str(text);
     }
 
-    pub fn set_attribute(&mut self, attr: impl IntoAttribue, value: &str, root: Option<u64>) {
+    pub fn set_attribute(&mut self, attr: impl IntoAttribue, value: Arguments, root: Option<u64>) {
         let root = root.map(|id| self.check_id(id));
         self.msg.add_element(Op::SetAttribute as u8);
         self.encode_maybe_id(root);
@@ -456,14 +463,18 @@ impl<V: VecLike<u8>> MsgBuilder<V> {
         self.msg.add_element(byte_size);
     }
 
-    pub(crate) fn encode_str(&mut self, string: &str) {
-        self.msg.extend_slice(&(string.len() as u16).to_le_bytes());
-        self.str_buf.extend_slice(string.as_bytes());
+    pub(crate) fn encode_str(&mut self, string: Arguments) {
+        let prev_len = self.str_buf.len();
+        self.str_buf.write_fmt(string).unwrap();
+        let len = self.str_buf.len() - prev_len;
+        self.msg.extend_slice(&(len as u16).to_le_bytes());
     }
 
-    pub(crate) fn encode_cachable_str(&mut self, string: &str) {
-        self.msg.extend_slice(&(string.len() as u16).to_le_bytes());
-        self.str_buf.extend_slice(string.as_bytes());
+    pub(crate) fn encode_cachable_str(&mut self, string: Arguments) {
+        let prev_len = self.str_buf.len();
+        self.str_buf.write_fmt(string).unwrap();
+        let len = self.str_buf.len() - prev_len;
+        self.msg.extend_slice(&(len as u16).to_le_bytes());
     }
 
     #[inline]
