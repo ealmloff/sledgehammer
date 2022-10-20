@@ -1,9 +1,16 @@
-export function work_last_created(mem) {
-    window.interpreter.Work(mem);
+export function work_last_created() {
+    window.interpreter.Work();
 }
 
+export function last_needs_memory() {
+    return window.interpreter.NeedsMemory();
+}
 
-let parent, len, children, node, ns, attr, text, i, name, value, element;
+export function update_last_memory(mem) {
+    window.interpreter.UpdateMemory(mem);
+}
+
+let parent, len, children, node, ns, attr, text, i, name, value, element, ptr;
 
 export class JsInterpreter {
     constructor(root, mem, _ptr_ptr, _str_ptr_ptr, _str_len_ptr) {
@@ -22,10 +29,28 @@ export class JsInterpreter {
         window.interpreter = this;
     }
 
-    Work(mem) {
+    NeedsMemory() {
+        return this.view.buffer.byteLength === 0;
+    }
+
+    UpdateMemory(mem) {
+        console.log("Updating memory");
         this.view = new DataView(mem.buffer);
+    }
+
+    Work() {
         this.u8BufPos = this.view.getUint32(this.ptr_ptr, true);
-        this.strings = this.decoder.decode(new DataView(mem.buffer, this.view.getUint32(this.str_ptr_ptr, true), this.view.getUint32(this.str_len_ptr, true)));
+        ptr = this.view.getUint32(this.str_ptr_ptr, true);
+        len = this.view.getUint32(this.str_len_ptr, true);
+        if (len > 0) {
+            // for small strings decoding them in javascript to avoid the overhead of native calls is faster
+            if (len < 25) {
+                this.strings = this.utf8Decode(ptr, len);
+            }
+            else {
+                this.strings = this.decoder.decode(new DataView(this.view.buffer, ptr, len));
+            }
+        }
         this.strPos = 0;
         // this is faster than a while(true) loop
         for (; ;) {
@@ -326,6 +351,47 @@ export class JsInterpreter {
 
     SetNode(id, node) {
         this.nodes[id] = node;
+    }
+
+    utf8Decode(start, byteLength) {
+        let pos = start;
+        const end = pos + byteLength;
+        let out = "";
+        let byte1;
+        while (pos < end) {
+            byte1 = this.view.getUint8(pos++);
+            if ((byte1 & 0x80) === 0) {
+                // 1 byte
+                out += String.fromCharCode(byte1);
+            } else if ((byte1 & 0xe0) === 0xc0) {
+                // 2 bytes
+                out += String.fromCharCode(((byte1 & 0x1f) << 6) | (this.view.getUint8(pos++) & 0x3f));
+            } else if ((byte1 & 0xf0) === 0xe0) {
+                // 3 bytes
+                out += String.fromCharCode(((byte1 & 0x1f) << 12) | ((this.view.getUint8(pos++) & 0x3f) << 6) | (this.view.getUint8(pos++) & 0x3f));
+            } else if ((byte1 & 0xf8) === 0xf0) {
+                // 4 bytes
+                let unit = ((byte1 & 0x07) << 0x12) | ((this.view.getUint8(pos++) & 0x3f) << 0x0c) | ((this.view.getUint8(pos++) & 0x3f) << 0x06) | (this.view.getUint8(pos++) & 0x3f);
+                if (unit > 0xffff) {
+                    unit -= 0x10000;
+                    out += String.fromCharCode(((unit >>> 10) & 0x3ff) | 0xd800);
+                    unit = 0xdc00 | (unit & 0x3ff);
+                }
+                out += String.fromCharCode(unit);
+            } else {
+                out += String.fromCharCode(byte1);
+            }
+        }
+
+        return out;
+    }
+
+    matches(id, selector) {
+        return this.nodes[id].matches(selector);
+    }
+
+    id(id) {
+        return this.nodes[id].id();
     }
 }
 

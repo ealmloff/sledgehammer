@@ -3,8 +3,8 @@ use std::{fmt::Arguments, io::Write};
 use web_sys::{Element, Node};
 
 use crate::{
-    get_id_size, set_id_size, work_last_created, ElementBuilderExt, IntoAttribue, JsInterpreter,
-    MSG_PTR_PTR, STR_LEN_PTR, STR_PTR_PTR,
+    get_id_size, last_needs_memory, set_id_size, update_last_memory, work_last_created,
+    ElementBuilderExt, IntoAttribue, JsInterpreter, MSG_PTR_PTR, STR_LEN_PTR, STR_PTR_PTR,
 };
 
 pub(crate) fn id_size(bytes: [u8; 8]) -> u8 {
@@ -489,7 +489,10 @@ impl<V: VecLike> MsgBuilder<V> {
             let mut_str_len_ptr: *mut usize = std::mem::transmute(STR_LEN_PTR);
             *mut_str_len_ptr = self.str_buf.len() as usize;
         }
-        work_last_created(wasm_bindgen::memory());
+        if last_needs_memory() {
+            update_last_memory(wasm_bindgen::memory())
+        }
+        work_last_created();
         self.msg.clear();
         self.str_buf.clear();
     }

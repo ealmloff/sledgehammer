@@ -32,7 +32,11 @@ static mut ID_SIZE: u8 = 1;
 
 #[wasm_bindgen(module = "/interpreter.js")]
 extern "C" {
-    fn work_last_created(mem: JsValue);
+    fn work_last_created();
+
+    fn update_last_memory(mem: JsValue);
+
+    fn last_needs_memory() -> bool;
 
     pub type JsInterpreter;
 
@@ -46,7 +50,19 @@ extern "C" {
     ) -> JsInterpreter;
 
     #[wasm_bindgen(method)]
-    pub fn Work(this: &JsInterpreter, mem: JsValue);
+    pub fn Work(this: &JsInterpreter);
+
+    #[wasm_bindgen(method)]
+    pub fn UpdateMemory(this: &JsInterpreter, mem: JsValue);
+
+    #[wasm_bindgen(method)]
+    pub fn matches(this: &JsInterpreter, id: u32, selector: &str) -> bool;
+
+    #[wasm_bindgen(method)]
+    pub fn id(this: &JsInterpreter, id: u32) -> String;
+
+    #[wasm_bindgen(method)]
+    pub fn NeedsMemory(this: &JsInterpreter) -> bool;
 
     #[wasm_bindgen(method)]
     pub fn SetNode(this: &JsInterpreter, id: u64, node: Node);
