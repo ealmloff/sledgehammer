@@ -149,25 +149,16 @@ export class JsInterpreter {
                     switch (attr) {
                         case 254:
                             attr = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
-                            ns = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
-                            node.setAttributeNS(ns, attr, value);
+                            node.removeAttributeNS(this.strings.substring(this.strPos, this.strPos += this.decodeU16()), attr);
                             break;
                         case 255:
                             attr = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
-                            value = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
-                            node.setAttribute(attr, value);
+                            node.removeAttributeNS(ns, attr);
                             break;
                         default:
                             attr = convertAttribute(attr);
-                            value = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
-                            node.setAttribute(attr, value);
+                            node.removeAttributeNS(ns, attr);
                             break;
-                    }
-                    if (this.view.getUint8(this.u8BufPos++) == 1) {
-                        node.removeAttributeNS(this.strings.substring(this.strPos, this.strPos += this.decodeU16()), attr);
-                    }
-                    else {
-                        node.removeAttributeNS(ns, attr);
                     }
                     break;
                 // clone node
