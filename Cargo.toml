@@ -1,14 +1,19 @@
 [package]
 name = "sledgehammer"
-version = "0.1.0"
+version = "0.0.1"
 authors = ["Evan Almloff <ealmlof1@stumail.jccc.edu>"]
 edition = "2021"
-
+description = "Fast bindings for dom manipulations"
+documentation = "https://docs.rs/sledgehammer"
+readme = "README.md"
+repository = "https://github.com/demonthos/sledgehammer/"
+license = "MIT"
+keywords = ["web", "wasm", "dom"]
+categories = ["web-programming", "wasm", "api-bindings"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 wasm-bindgen = { version = "0.2" }
 web-sys = { version = "*", features = ["console", "Window", "Document", "Element", "HtmlElement", "HtmlHeadElement", "Performance"] }
-smallvec = { version = "1.9.0", features = ["const_generics", "const_new"] }
 js-sys = "0.3"
