@@ -15,5 +15,5 @@ categories = ["web-programming", "wasm", "api-bindings"]
 
 [dependencies]
 wasm-bindgen = "0.2.83"
-web-sys = { version = "0.3.60", features = ["console", "Window", "Document", "Element", "HtmlElement", "HtmlHeadElement", "Performance"] }
+web-sys = { version = "0.3.60", features = ["Window", "Document", "Element", "HtmlElement", "HtmlHeadElement"] }
 js-sys = "0.3.60"
