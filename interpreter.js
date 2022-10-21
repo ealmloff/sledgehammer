@@ -10,7 +10,7 @@ export function update_last_memory(mem) {
     window.interpreter.UpdateMemory(mem);
 }
 
-let parent, len, children, node, ns, attr, text, i, name, value, element, ptr;
+let parent, len, children, node, ns, attr, op, i, name, value, element, ptr;
 
 export class JsInterpreter {
     constructor(root, mem, _ptr_updated_ptr, _ptr_ptr, _str_ptr_ptr, _str_len_ptr) {
@@ -59,10 +59,20 @@ export class JsInterpreter {
         }
         // this is faster than a while(true) loop
         for (; ;) {
-            switch (this.view.getUint8(this.u8BufPos++)) {
+            op = this.view.getUint8(this.u8BufPos++);
+            // first bool: op & 0x20
+            // second bool: op & 0x40
+            // third bool: op & 0x80
+            switch (op & 0x1F) {
                 // append children
                 case 0:
-                    parent = this.decodeNode();
+                    // the first bool is encoded as op & (1 << 5)
+                    if (op & 0x20) {
+                        parent = this.nodes[this.decodeId()];
+                    }
+                    else {
+                        parent = this.lastNode;
+                    }
                     len = this.decodeU32();
                     for (i = 0; i < len; i++) {
                         parent.appendChild(this.nodes[this.decodeId()]);
@@ -70,9 +80,15 @@ export class JsInterpreter {
                     break;
                 // replace with
                 case 1:
-                    parent = this.decodeNode();
+                    // the first bool is encoded as op & (1 << 5)
+                    if (op & 0x20) {
+                        parent = this.nodes[this.decodeId()];
+                    }
+                    else {
+                        parent = this.lastNode;
+                    }
                     len = this.decodeU32();
-                    if (len === 0) {
+                    if (len === 1) {
                         parent.replaceWith(this.nodes[this.decodeId()]);
                     }
                     else {
@@ -85,9 +101,15 @@ export class JsInterpreter {
                     break;
                 // insert after
                 case 2:
-                    parent = this.decodeNode();
+                    // the first bool is encoded as op & (1 << 5)
+                    if (op & 0x20) {
+                        parent = this.nodes[this.decodeId()];
+                    }
+                    else {
+                        parent = this.lastNode;
+                    }
                     len = this.decodeU32();
-                    if (len === 0) {
+                    if (len === 1) {
                         parent.after(this.nodes[this.decodeId()]);
                     } else {
                         children = [];
@@ -99,9 +121,15 @@ export class JsInterpreter {
                     break;
                 // insert before
                 case 3:
-                    parent = this.decodeNode();
+                    // the first bool is encoded as op & (1 << 5)
+                    if (op & 0x20) {
+                        parent = this.nodes[this.decodeId()];
+                    }
+                    else {
+                        parent = this.lastNode;
+                    }
                     len = this.decodeU32();
-                    if (len === 0) {
+                    if (len === 1) {
                         parent.before(this.nodes[this.decodeId()]);
                     } else {
                         children = [];
@@ -113,7 +141,8 @@ export class JsInterpreter {
                     break;
                 // remove
                 case 4:
-                    if (this.view.getUint8(this.u8BufPos++) === 1) {
+                    // the first bool is encoded as op & (1 << 5)
+                    if (op & 0x20) {
                         this.nodes[this.decodeId()].remove();
                     }
                     else {
@@ -123,26 +152,30 @@ export class JsInterpreter {
                 // create text node
                 case 5:
                     this.lastNode = document.createTextNode(this.strings.substring(this.strPos, this.strPos += this.decodeU16()));
-                    if (this.view.getUint8(this.u8BufPos++) === 1) {
+                    // the first bool is encoded as op & (1 << 5)
+                    if (op & 0x20) {
                         this.nodes[this.decodeId()] = this.lastNode;
                     }
                     break;
                 // create element
                 case 6:
                     name = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
-                    if (this.nodes[this.u8BufPos++] === 1) {
+                    // the first bool is encoded as op & (1 << 5)
+                    if (op & 0x20) {
                         this.lastNode = document.createElementNS(name, this.strings.substring(this.strPos, this.strPos += this.decodeU16()));
                     }
                     else {
                         this.lastNode = document.createElement(name);
                     }
-                    if (this.view.getUint8(this.u8BufPos++) === 1) {
+                    // the second bool is encoded as op & (1 << 6)
+                    if (op & 0x40) {
                         this.nodes[this.decodeId()] = this.lastNode;
                     }
                     break;
                 // set text
-                case 10:
-                    if (this.view.getUint8(this.u8BufPos++) === 1) {
+                case 7:
+                    // the first bool is encoded as op & (1 << 5)
+                    if (op & 0x20) {
                         this.nodes[this.decodeId()].textContent = this.strings.substring(this.strPos, this.strPos += this.decodeU16());;
                     }
                     else {
@@ -150,8 +183,14 @@ export class JsInterpreter {
                     }
                     break;
                 // set attribute
-                case 11:
-                    node = this.decodeNode();
+                case 8:
+                    // the first bool is encoded as op & (1 << 5)
+                    if (op & 0x20) {
+                        node = this.nodes[this.decodeId()];
+                    }
+                    else {
+                        node = this.lastNode;
+                    }
                     attr = this.view.getUint8(this.u8BufPos++);
                     switch (attr) {
                         case 254:
@@ -174,8 +213,14 @@ export class JsInterpreter {
                     }
                     break;
                 // remove attribute
-                case 12:
-                    node = this.decodeNode();
+                case 9:
+                    // the first bool is encoded as op & (1 << 5)
+                    if (op & 0x20) {
+                        node = this.nodes[this.decodeId()];
+                    }
+                    else {
+                        node = this.lastNode;
+                    }
                     attr = this.view.getUint8(this.u8BufPos++);
                     switch (attr) {
                         case 254:
@@ -191,50 +236,64 @@ export class JsInterpreter {
                     }
                     break;
                 // clone node
-                case 13:
-                    this.lastNode = this.decodeNode().cloneNode(true);
-                    if (this.view.getUint8(this.u8BufPos++) === 1) {
+                case 10:
+                    // the first bool is encoded as op & (1 << 5)
+                    if (op & 0x20) {
+                        this.lastNode = this.nodes[this.decodeId()].cloneNode(true);
+                    }
+                    else {
+                        this.lastNode = this.lastNode.cloneNode(true);
+                    }
+                    // the second bool is encoded as op & (1 << 6)
+                    if (op & 0x40) {
                         this.nodes[this.decodeId()] = this.lastNode;
                     }
                     break;
                 // clone node children
-                case 14:
-                    for (let current = this.decodeNode().cloneNode(true).firstChild; current !== null; current = current.nextSibling) {
+                case 11:
+                    // the first bool is encoded as op & (1 << 5)
+                    if (op & 0x20) {
+                        node = this.nodes[this.decodeId()].cloneNode(true).firstChild;
+                    }
+                    else {
+                        node = this.lastNode.cloneNode(true).firstChild;
+                    }
+                    for (; node !== null; node = node.nextSibling) {
                         if (this.view.getUint8(this.u8BufPos++) === 1) {
-                            this.nodes[this.decodeId()] = current;
+                            this.nodes[this.decodeId()] = node;
                         }
                     }
                     break;
                 // first child
-                case 15:
+                case 12:
                     this.lastNode = this.lastNode.firstChild;
                     break;
                 // next sibling
-                case 16:
+                case 13:
                     this.lastNode = this.lastNode.nextSibling;
                     break;
                 // parent
-                case 17:
+                case 14:
                     this.lastNode = this.lastNode.parentNode;
                     break;
                 // store with id
-                case 18:
+                case 15:
                     this.nodes[this.decodeId()] = this.lastNode;
                     break;
                 // set last node
-                case 19:
+                case 16:
                     this.lastNode = this.nodes[this.decodeId()];
                     break;
                 // set id size
-                case 20:
+                case 17:
                     this.idSize = this.view.getUint8(this.u8BufPos++);
                     this.updateDecodeIdFn();
                     break;
                 // stop
-                case 21:
+                case 18:
                     return;
                 // create full element
-                case 22:
+                case 19:
                     this.createFullElement();
                 default:
                     this.u8BufPos--;
@@ -254,7 +313,7 @@ export class JsInterpreter {
     }
 
     createFullElement() {
-        const parent_id = this.decodeMaybeId(),
+        const parent_id = this.decodeMaybeIdByteBool(),
             parent_element = this.createElement(),
             numAttributes = this.view.getUint8(this.u8BufPos++);
         for (let i = 0; i < numAttributes; i++) {
@@ -284,17 +343,8 @@ export class JsInterpreter {
         return parent_element;
     }
 
-    // decodes and returns a node
-    decodeNode() {
-        if (this.view.getUint8(this.u8BufPos++) === 1) {
-            return this.nodes[this.decodeId()];
-        }
-        else {
-            return this.lastNode;
-        }
-    }
-
-    decodeMaybeId() {
+    // decodes and returns a node encoded with a boolean as a byte representing whether it is a new id or let last node
+    decodeMaybeIdByteBool() {
         if (this.view.getUint8(this.u8BufPos++) === 0) {
             return null;
         }

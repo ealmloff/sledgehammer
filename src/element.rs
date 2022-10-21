@@ -173,7 +173,7 @@ pub trait ElementBuilderExt {
 
 impl<K: IntoElement, A: ManyAttrs, E: ManyElements> ElementBuilderExt for ElementBuilder<K, A, E> {
     fn encode<V: VecLike>(self, v: &mut MsgChannel<V>, id_size: u8) {
-        v.encode_maybe_id(self.id);
+        v.encode_maybe_id_with_byte_bool(self.id);
         self.kind.encode(v);
         self.attrs.encode(v);
         self.children.encode(v, id_size);
