@@ -4,15 +4,15 @@ use std::ops::RangeInclusive;
 
 use crate::{
     attribute::ManyAttrs,
-    builder::{MsgBuilder, VecLike},
-    id_size,
+    builder::{MsgChannel, VecLike},
+    id_size, MaybeId,
 };
 
 pub trait IntoElement {
     const LEN: RangeInclusive<Option<usize>>;
 
     fn size(&self) -> usize;
-    fn encode<V: VecLike>(self, v: &mut MsgBuilder<V>);
+    fn encode<V: VecLike>(self, v: &mut MsgChannel<V>);
 }
 
 impl IntoElement for Element {
@@ -22,7 +22,7 @@ impl IntoElement for Element {
         1
     }
 
-    fn encode<V: VecLike>(self, v: &mut MsgBuilder<V>) {
+    fn encode<V: VecLike>(self, v: &mut MsgChannel<V>) {
         v.msg.add_element(self as u8)
     }
 }
@@ -34,7 +34,7 @@ impl<S: AsRef<str>> IntoElement for S {
         self.as_ref().len() + 2
     }
 
-    fn encode<V: VecLike>(self, v: &mut MsgBuilder<V>) {
+    fn encode<V: VecLike>(self, v: &mut MsgChannel<V>) {
         v.msg.add_element(255);
         v.encode_str(format_args!("{}", self.as_ref()));
     }
@@ -43,7 +43,7 @@ impl<S: AsRef<str>> IntoElement for S {
 #[allow(clippy::len_without_is_empty)]
 pub trait ManyElements {
     fn len(&self) -> usize;
-    fn encode<V: VecLike>(self, v: &mut MsgBuilder<V>, id_size: u8);
+    fn encode<V: VecLike>(self, v: &mut MsgChannel<V>, id_size: u8);
     fn max_id_size(&self) -> u8;
 }
 
@@ -52,7 +52,7 @@ impl ManyElements for () {
         0
     }
 
-    fn encode<V: VecLike>(self, v: &mut MsgBuilder<V>, _: u8) {
+    fn encode<V: VecLike>(self, v: &mut MsgChannel<V>, _: u8) {
         v.msg.add_element(<Self as ManyElements>::len(&self) as u8);
     }
 
@@ -69,7 +69,7 @@ macro_rules! impl_many_elements {
                 $l
             }
 
-            fn encode<V: VecLike>(self, v: &mut MsgBuilder<V>, id_size: u8) {
+            fn encode<V: VecLike>(self, v: &mut MsgChannel<V>, id_size: u8) {
                 v.msg.add_element(self.len() as u8);
                 let ($($i,)+) = self;
                 $($i.encode(v, id_size);)+
@@ -153,12 +153,11 @@ pub struct ElementBuilder<K: IntoElement, A: ManyAttrs, E: ManyElements> {
 }
 
 impl<K: IntoElement, A: ManyAttrs, E: ManyElements> ElementBuilder<K, A, E> {
-    pub const fn new(id: Option<u32>, kind: K, attrs: A, children: E) -> Self {
+    pub const fn new(id: MaybeId, kind: K, attrs: A, children: E) -> Self {
         Self {
-            id: if let Some(id) = id {
-                Some(id.to_le_bytes())
-            } else {
-                None
+            id: match id {
+                MaybeId::Node(id) => Some(id.to_le_bytes()),
+                MaybeId::LastNode => None,
             },
             kind,
             attrs,
@@ -168,12 +167,12 @@ impl<K: IntoElement, A: ManyAttrs, E: ManyElements> ElementBuilder<K, A, E> {
 }
 
 pub trait ElementBuilderExt {
-    fn encode<V: VecLike>(self, v: &mut MsgBuilder<V>, id_size: u8);
+    fn encode<V: VecLike>(self, v: &mut MsgChannel<V>, id_size: u8);
     fn max_id_size(&self) -> u8;
 }
 
 impl<K: IntoElement, A: ManyAttrs, E: ManyElements> ElementBuilderExt for ElementBuilder<K, A, E> {
-    fn encode<V: VecLike>(self, v: &mut MsgBuilder<V>, id_size: u8) {
+    fn encode<V: VecLike>(self, v: &mut MsgChannel<V>, id_size: u8) {
         v.encode_maybe_id(self.id);
         self.kind.encode(v);
         self.attrs.encode(v);

@@ -46,7 +46,7 @@ extern "C" {
     pub type JsInterpreter;
 
     #[wasm_bindgen(constructor)]
-    pub fn new(
+    pub(crate) fn new(
         arg: Element,
         mem: JsValue,
         msg_pos_updated_ptr: usize,
@@ -56,21 +56,27 @@ extern "C" {
     ) -> JsInterpreter;
 
     #[wasm_bindgen(method)]
-    pub fn Work(this: &JsInterpreter);
+    pub(crate) fn Work(this: &JsInterpreter);
 
     #[wasm_bindgen(method)]
-    pub fn UpdateMemory(this: &JsInterpreter, mem: JsValue);
+    pub(crate) fn UpdateMemory(this: &JsInterpreter, mem: JsValue);
+
+    #[allow(unused)]
+    #[wasm_bindgen(method)]
+    pub(crate) fn NeedsMemory(this: &JsInterpreter) -> bool;
 
     #[wasm_bindgen(method)]
-    pub fn NeedsMemory(this: &JsInterpreter) -> bool;
+    pub(crate) fn SetNode(this: &JsInterpreter, id: u32, node: Node);
 
+    #[allow(unused)]
     #[wasm_bindgen(method)]
-    pub fn SetNode(this: &JsInterpreter, id: u32, node: Node);
+    pub(crate) fn GetNode(this: &JsInterpreter, id: u32) -> Node;
 }
 
 fn get_id_size() -> u8 {
     unsafe { ID_SIZE }
 }
+
 fn set_id_size(size: u8) {
     unsafe {
         ID_SIZE = size;

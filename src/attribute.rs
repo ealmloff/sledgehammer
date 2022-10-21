@@ -2,20 +2,20 @@
 
 use crate::builder::VecLike;
 use crate::value::IntoValue;
-use crate::MsgBuilder;
+use crate::MsgChannel;
 
 pub trait IntoAttribue {
-    fn encode<V: VecLike>(self, v: &mut MsgBuilder<V>);
+    fn encode<V: VecLike>(self, v: &mut MsgChannel<V>);
 }
 
 impl IntoAttribue for Attribute {
-    fn encode<V: VecLike>(self, v: &mut MsgBuilder<V>) {
+    fn encode<V: VecLike>(self, v: &mut MsgChannel<V>) {
         v.msg.add_element(self as u8)
     }
 }
 
 impl<S: AsRef<str>> IntoAttribue for S {
-    fn encode<V: VecLike>(self, v: &mut MsgBuilder<V>) {
+    fn encode<V: VecLike>(self, v: &mut MsgChannel<V>) {
         v.msg.add_element(255);
         v.encode_cachable_str(format_args!("{}", self.as_ref()));
     }
@@ -24,7 +24,7 @@ impl<S: AsRef<str>> IntoAttribue for S {
 #[allow(clippy::len_without_is_empty)]
 pub trait ManyAttrs {
     fn len(&self) -> usize;
-    fn encode<V: VecLike>(self, v: &mut MsgBuilder<V>);
+    fn encode<V: VecLike>(self, v: &mut MsgChannel<V>);
 }
 
 impl ManyAttrs for () {
@@ -32,7 +32,7 @@ impl ManyAttrs for () {
         0
     }
 
-    fn encode<V: VecLike>(self, v: &mut MsgBuilder<V>) {
+    fn encode<V: VecLike>(self, v: &mut MsgChannel<V>) {
         v.msg.add_element(<Self as ManyAttrs>::len(&self) as u8);
     }
 }
@@ -45,7 +45,7 @@ macro_rules! impl_many_attrs {
                 $l
             }
 
-            fn encode<V: VecLike>(self, v: &mut MsgBuilder<V>) {
+            fn encode<V: VecLike>(self, v: &mut MsgChannel<V>) {
                 v.msg.add_element(self.len() as u8);
                 let ($(($i, $m),)+) = self;
                 $($i.encode(v);$m.encode(v);)+

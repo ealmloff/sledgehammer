@@ -3,14 +3,14 @@
 
 use std::ops::RangeInclusive;
 
-use crate::{builder::VecLike, MsgBuilder};
+use crate::{builder::VecLike, MsgChannel};
 
 #[allow(clippy::len_without_is_empty)]
 pub trait IntoEvent {
     const LEN: RangeInclusive<Option<usize>>;
 
     fn len(&self) -> usize;
-    fn encode<V: VecLike>(self, v: &mut MsgBuilder<V>);
+    fn encode<V: VecLike>(self, v: &mut MsgChannel<V>);
 }
 
 impl IntoEvent for Event {
@@ -20,7 +20,7 @@ impl IntoEvent for Event {
         1
     }
 
-    fn encode<V: VecLike>(self, v: &mut MsgBuilder<V>) {
+    fn encode<V: VecLike>(self, v: &mut MsgChannel<V>) {
         v.msg.add_element(self as u8)
     }
 }
@@ -32,7 +32,7 @@ impl<S: AsRef<str>> IntoEvent for S {
         self.as_ref().len()
     }
 
-    fn encode<V: VecLike>(self, v: &mut MsgBuilder<V>) {
+    fn encode<V: VecLike>(self, v: &mut MsgChannel<V>) {
         v.msg.add_element(255);
         v.encode_str(format_args!("{}", self.as_ref()));
     }

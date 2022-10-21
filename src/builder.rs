@@ -8,6 +8,25 @@ use crate::{
     STR_PTR_PTR,
 };
 
+/// An id that may be either the last node or a node with an assigned id.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum MaybeId {
+    /// The last node that was created or navigated to.
+    LastNode,
+    /// A node that was created and stored with an id
+    Node(NodeId),
+}
+
+/// A node that was created and stored with an id
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct NodeId(pub u32);
+
+impl NodeId {
+    pub(crate) const fn to_le_bytes(self) -> [u8; 4] {
+        self.0.to_le_bytes()
+    }
+}
+
 pub(crate) fn id_size(bytes: [u8; 4]) -> u8 {
     let first_contentful_byte = bytes.iter().rev().position(|&b| b != 0).unwrap_or(4);
     (4 - first_contentful_byte) as u8
@@ -53,31 +72,15 @@ impl VecLike for Vec<u8> {
     }
 }
 
-// impl<const N: usize> VecLike for SmallVec<[u8; N]> {
-//     fn add_element(&mut self, element: u8) {
-//         self.push(element);
-//     }
-
-//     fn extend_slice(&mut self, slice: &[u8]) {
-//         self.extend_from_slice(slice);
-//     }
-
-//     fn len(&self) -> usize {
-//         self.len()
-//     }
-
-//     fn clear(&mut self) {
-//         self.clear();
-//     }
-// }
-
-pub struct MsgBuilder<V: VecLike + AsRef<[u8]> = Vec<u8>> {
+/// A channel to send batched messages to the interpreter.
+/// IMPORTANT: All of the functions that are not marked otherwise are qued and not exicuted imidately. When you want to exicute the que you have to call `flush`.
+pub struct MsgChannel<V: VecLike + AsRef<[u8]> = Vec<u8>> {
     pub(crate) msg: V,
     pub(crate) str_buf: V,
     pub(crate) js_interpreter: JsInterpreter,
 }
 
-impl<V: VecLike + AsRef<[u8]>> MsgBuilder<V> {
+impl<V: VecLike + AsRef<[u8]>> MsgChannel<V> {
     pub fn with(v: V, v2: V, el: Element) -> Self {
         format!(
             "init: {:?}, {:?}, {:?}",
@@ -104,7 +107,7 @@ impl<V: VecLike + AsRef<[u8]>> MsgBuilder<V> {
     }
 }
 
-impl MsgBuilder<Vec<u8>> {
+impl MsgChannel<Vec<u8>> {
     pub fn new(el: Element) -> Self {
         Self::with(Vec::new(), Vec::new(), el)
     }
@@ -132,9 +135,6 @@ enum Op {
     /// Create a new element node
     CreateElement = 6,
 
-    /// Create a new placeholder node.
-    CreatePlaceholder = 7,
-
     /// Set the textcontent of a node.
     SetText = 10,
 
@@ -160,11 +160,9 @@ enum Op {
     ParentNode = 17,
 
     /// Stores the last node with a new id.
-    // id: u32,
     StoreWithId = 18,
 
     /// Manually set the last node.
-    // id: u32,
     SetLastNode = 19,
 
     /// Set id size
@@ -177,9 +175,10 @@ enum Op {
     BuildFullElement = 22,
 }
 
-impl<V: VecLike> MsgBuilder<V> {
-    pub fn append_children(&mut self, root: Option<u32>, children: Vec<u32>) {
-        let root = root.map(|id| self.check_id(id));
+impl<V: VecLike> MsgChannel<V> {
+    /// Appends a number of nodes as children of the given node.
+    pub fn append_children(&mut self, root: MaybeId, children: Vec<NodeId>) {
+        let root = self.check_maybe_id(root);
         for child in &children {
             self.check_id(*child);
         }
@@ -192,8 +191,9 @@ impl<V: VecLike> MsgBuilder<V> {
         }
     }
 
-    pub fn replace_with(&mut self, root: Option<u32>, nodes: Vec<u32>) {
-        let root = root.map(|id| self.check_id(id));
+    /// Replace a given (single) node with a number of nodes
+    pub fn replace_with(&mut self, root: MaybeId, nodes: Vec<NodeId>) {
+        let root = self.check_maybe_id(root);
         for child in &nodes {
             self.check_id(*child);
         }
@@ -205,8 +205,9 @@ impl<V: VecLike> MsgBuilder<V> {
         }
     }
 
-    pub fn insert_after(&mut self, root: Option<u32>, nodes: Vec<u32>) {
-        let root = root.map(|id| self.check_id(id));
+    /// Insert a number of nodes after a given node.
+    pub fn insert_after(&mut self, root: MaybeId, nodes: Vec<NodeId>) {
+        let root = self.check_maybe_id(root);
         for child in &nodes {
             self.check_id(*child);
         }
@@ -218,8 +219,9 @@ impl<V: VecLike> MsgBuilder<V> {
         }
     }
 
-    pub fn insert_before(&mut self, root: Option<u32>, nodes: Vec<u32>) {
-        let root = root.map(|id| self.check_id(id));
+    /// Insert a number of nodes before a given node.
+    pub fn insert_before(&mut self, root: MaybeId, nodes: Vec<NodeId>) {
+        let root = self.check_maybe_id(root);
         for child in &nodes {
             self.check_id(*child);
         }
@@ -231,27 +233,24 @@ impl<V: VecLike> MsgBuilder<V> {
         }
     }
 
-    pub fn remove(&mut self, id: Option<u32>) {
-        let root = id.map(|id| self.check_id(id));
+    /// Remove a node from the DOM.
+    pub fn remove(&mut self, id: MaybeId) {
+        let root = self.check_maybe_id(id);
         self.msg.add_element(Op::Remove as u8);
         self.encode_maybe_id(root);
     }
 
-    pub fn create_text_node(&mut self, text: Arguments, id: Option<u32>) {
-        let root = id.map(|id| self.check_id(id));
+    /// Create a new text node
+    pub fn create_text_node(&mut self, text: Arguments, id: MaybeId) {
+        let root = self.check_maybe_id(id);
         self.msg.add_element(Op::CreateTextNode as u8);
         self.encode_str(text);
         self.encode_maybe_id(root);
     }
 
-    pub fn create_element(
-        &mut self,
-        tag: Arguments,
-        ns: Option<Arguments>,
-        id: Option<u32>,
-        children: u32,
-    ) {
-        let root = id.map(|id| self.check_id(id));
+    /// Create a new element node
+    pub fn create_element(&mut self, tag: Arguments, ns: Option<Arguments>, id: MaybeId) {
+        let root = self.check_maybe_id(id);
         self.msg.add_element(Op::CreateElement as u8);
         self.encode_cachable_str(tag);
         if let Some(ns) = ns {
@@ -261,47 +260,45 @@ impl<V: VecLike> MsgBuilder<V> {
             self.msg.add_element(0);
         }
         self.encode_maybe_id(root);
-        self.msg.extend_slice(&children.to_le_bytes());
     }
 
-    pub fn create_placeholder(&mut self, id: Option<u32>) {
-        let root = id.map(|id| self.check_id(id));
-        self.msg.add_element(Op::CreatePlaceholder as u8);
-        self.encode_maybe_id(root);
-    }
-
-    pub fn set_text(&mut self, text: Arguments, root: Option<u32>) {
-        let root = root.map(|id| self.check_id(id));
+    /// Set the textcontent of a node.
+    pub fn set_text(&mut self, text: Arguments, root: MaybeId) {
+        let root = self.check_maybe_id(root);
         self.msg.add_element(Op::SetText as u8);
         self.encode_maybe_id(root);
         self.encode_str(text);
     }
 
-    pub fn set_attribute(&mut self, attr: impl IntoAttribue, value: Arguments, root: Option<u32>) {
-        let root = root.map(|id| self.check_id(id));
+    /// Set the value of a node's attribute.
+    pub fn set_attribute(&mut self, attr: impl IntoAttribue, value: Arguments, root: MaybeId) {
+        let root = self.check_maybe_id(root);
         self.msg.add_element(Op::SetAttribute as u8);
         self.encode_maybe_id(root);
         attr.encode(self);
         self.encode_str(value);
     }
 
-    pub fn remove_attribute(&mut self, attr: impl IntoAttribue, root: Option<u32>) {
-        let root = root.map(|id| self.check_id(id));
+    /// Remove an attribute from a node.
+    pub fn remove_attribute(&mut self, attr: impl IntoAttribue, root: MaybeId) {
+        let root = self.check_maybe_id(root);
         self.msg.add_element(Op::RemoveAttribute as u8);
         self.encode_maybe_id(root);
         attr.encode(self);
     }
 
-    pub fn clone_node(&mut self, id: Option<u32>, new_id: Option<u32>) {
-        let root = id.map(|id| self.check_id(id));
-        let new_id = new_id.map(|id| self.check_id(id));
+    /// Clone a node and store it with a new id.
+    pub fn clone_node(&mut self, id: MaybeId, new_id: MaybeId) {
+        let root = self.check_maybe_id(id);
+        let new_id = self.check_maybe_id(new_id);
         self.msg.add_element(Op::CloneNode as u8);
         self.encode_maybe_id(root);
         self.encode_maybe_id(new_id);
     }
 
-    pub fn clone_node_children(&mut self, id: Option<u32>, new_ids: Vec<u32>) {
-        let root = id.map(|id| self.check_id(id));
+    /// Clone the children of a given node and store them with new ids.
+    pub fn clone_node_children(&mut self, id: MaybeId, new_ids: Vec<NodeId>) {
+        let root = self.check_maybe_id(id);
         for id in &new_ids {
             self.check_id(*id);
         }
@@ -312,30 +309,36 @@ impl<V: VecLike> MsgBuilder<V> {
         }
     }
 
+    /// Move the last node to the first child
     pub fn first_child(&mut self) {
         self.msg.add_element(Op::FirstChild as u8);
     }
 
+    /// Move the last node to the next sibling
     pub fn next_sibling(&mut self) {
         self.msg.add_element(Op::NextSibling as u8);
     }
 
+    /// Move the last node to the parent node
     pub fn parent_node(&mut self) {
         self.msg.add_element(Op::ParentNode as u8);
     }
 
-    pub fn store_with_id(&mut self, id: u32) {
+    /// Store the last node with the given id. This is useful when traversing the document tree.
+    pub fn store_with_id(&mut self, id: NodeId) {
         let id = self.check_id(id);
         self.msg.add_element(Op::StoreWithId as u8);
         self.encode_id(id);
     }
 
-    pub fn set_last_node(&mut self, id: u32) {
+    /// Set the last node to the given id. The last node can be used to traverse the document tree without passing objects between wasm and js every time.
+    pub fn set_last_node(&mut self, id: NodeId) {
         let id = self.check_id(id);
         self.msg.add_element(Op::SetLastNode as u8);
         self.encode_id(id);
     }
 
+    /// Build a full element, slightly more efficent than creating the element creating the element with `create_element` and then setting the attributes.
     pub fn build_full_element(&mut self, el: impl ElementBuilderExt) {
         self.msg.add_element(Op::BuildFullElement as u8);
         el.encode(self, get_id_size());
@@ -360,13 +363,21 @@ impl<V: VecLike> MsgBuilder<V> {
     }
 
     #[inline]
-    fn check_id(&mut self, id: u32) -> [u8; 4] {
-        let bytes = id.to_le_bytes();
+    fn check_id(&mut self, id: NodeId) -> [u8; 4] {
+        let bytes = id.0.to_le_bytes();
         let byte_size = id_size(bytes);
         if byte_size > get_id_size() {
             self.set_byte_size(byte_size);
         }
         bytes
+    }
+
+    #[inline]
+    fn check_maybe_id(&mut self, id: MaybeId) -> Option<[u8; 4]> {
+        match id {
+            MaybeId::Node(id) => Some(self.check_id(id)),
+            MaybeId::LastNode => None,
+        }
     }
 
     #[inline]
@@ -397,6 +408,7 @@ impl<V: VecLike> MsgBuilder<V> {
         self.msg.extend_slice(&(len as u16).to_le_bytes());
     }
 
+    /// Exicutes any queued operations
     #[inline]
     pub fn flush(&mut self) {
         assert_eq!(0usize.to_le_bytes().len(), 32 / 8);
@@ -430,7 +442,13 @@ impl<V: VecLike> MsgBuilder<V> {
         self.str_buf.clear();
     }
 
-    pub fn set_node(&mut self, id: u32, node: Node) {
-        self.js_interpreter.SetNode(id, node);
+    /// IMPORTANT: Unlike other methods this method is exicuted imediately and does not wait for the next flush
+    pub fn set_node(&mut self, id: NodeId, node: Node) {
+        self.js_interpreter.SetNode(id.0, node);
+    }
+
+    /// IMPORTANT: Unlike other methods this method is exicuted imediately and does not wait for the next flush
+    pub fn get_node(&mut self, id: NodeId) -> Node {
+        self.js_interpreter.GetNode(id.0)
     }
 }

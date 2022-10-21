@@ -62,7 +62,7 @@ export class JsInterpreter {
             switch (this.view.getUint8(this.u8BufPos++)) {
                 // append children
                 case 0:
-                    parent = this.getNode();
+                    parent = this.decodeNode();
                     len = this.decodeU32();
                     for (i = 0; i < len; i++) {
                         parent.appendChild(this.nodes[this.decodeId()]);
@@ -70,7 +70,7 @@ export class JsInterpreter {
                     break;
                 // replace with
                 case 1:
-                    parent = this.getNode();
+                    parent = this.decodeNode();
                     len = this.decodeU32();
                     if (len === 0) {
                         parent.replaceWith(this.nodes[this.decodeId()]);
@@ -85,7 +85,7 @@ export class JsInterpreter {
                     break;
                 // insert after
                 case 2:
-                    parent = this.getNode();
+                    parent = this.decodeNode();
                     len = this.decodeU32();
                     if (len === 0) {
                         parent.after(this.nodes[this.decodeId()]);
@@ -99,7 +99,7 @@ export class JsInterpreter {
                     break;
                 // insert before
                 case 3:
-                    parent = this.getNode();
+                    parent = this.decodeNode();
                     len = this.decodeU32();
                     if (len === 0) {
                         parent.before(this.nodes[this.decodeId()]);
@@ -126,7 +126,6 @@ export class JsInterpreter {
                     if (this.view.getUint8(this.u8BufPos++) === 1) {
                         this.nodes[this.decodeId()] = this.lastNode;
                     }
-                    this.checkAppendParent();
                     break;
                 // create element
                 case 6:
@@ -140,20 +139,6 @@ export class JsInterpreter {
                     if (this.view.getUint8(this.u8BufPos++) === 1) {
                         this.nodes[this.decodeId()] = this.lastNode;
                     }
-                    this.checkAppendParent();
-                    children = this.decodeU32();
-                    if (children > 0) {
-                        this.parents.push([this.lastNode, children]);
-                    }
-                    break;
-                // create placeholder
-                case 7:
-                    this.lastNode = document.createElement("pre");
-                    this.lastNode.hidden = true;
-                    if (this.view.getUint8(this.u8BufPos++) === 1) {
-                        this.nodes[this.decodeId()] = this.lastNode;
-                    }
-                    this.checkAppendParent();
                     break;
                 // set text
                 case 10:
@@ -166,7 +151,7 @@ export class JsInterpreter {
                     break;
                 // set attribute
                 case 11:
-                    node = this.getNode();
+                    node = this.decodeNode();
                     attr = this.view.getUint8(this.u8BufPos++);
                     switch (attr) {
                         case 254:
@@ -190,7 +175,7 @@ export class JsInterpreter {
                     break;
                 // remove attribute
                 case 12:
-                    node = this.getNode();
+                    node = this.decodeNode();
                     attr = this.view.getUint8(this.u8BufPos++);
                     switch (attr) {
                         case 254:
@@ -207,14 +192,14 @@ export class JsInterpreter {
                     break;
                 // clone node
                 case 13:
-                    this.lastNode = this.getNode().cloneNode(true);
+                    this.lastNode = this.decodeNode().cloneNode(true);
                     if (this.view.getUint8(this.u8BufPos++) === 1) {
                         this.nodes[this.decodeId()] = this.lastNode;
                     }
                     break;
                 // clone node children
                 case 14:
-                    for (let current = this.getNode().cloneNode(true).firstChild; current !== null; current = current.nextSibling) {
+                    for (let current = this.decodeNode().cloneNode(true).firstChild; current !== null; current = current.nextSibling) {
                         if (this.view.getUint8(this.u8BufPos++) === 1) {
                             this.nodes[this.decodeId()] = current;
                         }
@@ -299,19 +284,8 @@ export class JsInterpreter {
         return parent_element;
     }
 
-    checkAppendParent() {
-        if (this.parents.length > 0) {
-            const lastParent = this.parents[this.parents.length - 1];
-            lastParent[1]--;
-            if (lastParent[1] === 0) {
-                this.parents.pop();
-            }
-            lastParent[0].appendChild(this.lastNode);
-        }
-    }
-
     // decodes and returns a node
-    getNode() {
+    decodeNode() {
         if (this.view.getUint8(this.u8BufPos++) === 1) {
             return this.nodes[this.decodeId()];
         }
@@ -363,6 +337,10 @@ export class JsInterpreter {
 
     SetNode(id, node) {
         this.nodes[id] = node;
+    }
+
+    GetNode(id) {
+        return this.nodes[id];
     }
 
     utf8Decode(start, byteLength) {
