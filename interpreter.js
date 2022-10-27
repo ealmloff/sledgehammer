@@ -10,8 +10,10 @@ export function update_last_memory(mem) {
     interpreter.UpdateMemory(mem);
 }
 
-let parent, len, children, node, ns, attr, op, i, name, value, element, ptr, metadata, pos, end, out, char, numAttributes, endRounded, halfByte, dis, interpreter;
+let parent, len, children, node, ns, attr, op, i, name, value, element, ptr, metadata, pos, end, out, char, numAttributes, endRounded, interpreter;
 
+// first bool: op & 0x40
+// second bool: op & 0x80
 const opLookup = [
     // first child
     function () {
@@ -40,7 +42,7 @@ const opLookup = [
     },
     // stop
     function () {
-        console.error("stop");
+        return true;
     },
     // create full element
     function () {
@@ -318,35 +320,18 @@ export class JsInterpreter {
             }
             this.strPos = 0;
         }
-        op = this.view.getUint8(this.u8BufPos++);
-        halfByte = op & 1;
-        if (halfByte) {
-            dis = (op & 0x0E) >> 1;
-        }
-        else {
-            dis = (op & 0x3E) >> 1;
-        }
 
         // this is faster than a while(true) loop
         for (; ;) {
-            // first bool: op & 0x40
-            // second bool: op & 0x80
-            opLookup[dis]();
-            if (halfByte) {
-                dis = op >> 4;
-                halfByte = false;
-            } else {
-                op = this.view.getUint8(this.u8BufPos++);
-                halfByte = op & 1;
-                if (halfByte) {
-                    dis = (op & 0x0E) >> 1;
-                }
-                else {
-                    dis = (op & 0x3E) >> 1;
-                }
+            op = this.view.getUint8(this.u8BufPos++);
+            if (op & 1) {
+                // first half byte
+                opLookup[(op & 0x0E) >> 1]();
+                // second half byte
+                if (opLookup[op >> 4]()) return;
             }
-            if (dis === 6) {
-                return;
+            else {
+                if (opLookup[(op & 0x3E) >> 1]()) return;
             }
         }
     }
