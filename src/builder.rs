@@ -4,7 +4,7 @@ use web_sys::{Element, Node};
 
 use crate::{
     get_id_size, last_needs_memory, set_id_size, update_last_memory, work_last_created,
-    ElementBuilderExt, IntoAttribue, JsInterpreter, MSG_POS_UPDATED_PTR, MSG_PTR_PTR, STR_LEN_PTR,
+    ElementBuilderExt, IntoAttribue, JsInterpreter, MSG_METADATA_PTR, MSG_PTR_PTR, STR_LEN_PTR,
     STR_PTR_PTR,
 };
 
@@ -50,6 +50,10 @@ pub trait VecLike: AsRef<[u8]> + Write {
     fn set(&mut self, index: usize, value: u8);
 
     fn modify<F: Fn(u8) -> u8>(&mut self, index: usize, f: F);
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl VecLike for Vec<u8> {
@@ -76,6 +80,10 @@ impl VecLike for Vec<u8> {
     fn modify<F: Fn(u8) -> u8>(&mut self, index: usize, f: F) {
         self[index] = f(self[index]);
     }
+
+    fn is_empty(&self) -> bool {
+        self.is_empty()
+    }
 }
 
 /// A channel to send batched messages to the interpreter.
@@ -86,11 +94,12 @@ pub struct MsgChannel<V: VecLike + AsRef<[u8]> = Vec<u8>> {
     pub(crate) js_interpreter: JsInterpreter,
     current_op_byte_idx: usize,
     current_op_bit_pack_index: u8,
+    current_op_half_byte: bool,
 }
 
 impl<V: VecLike + AsRef<[u8]>> MsgChannel<V> {
     pub fn with(v: V, v2: V, el: Element) -> Self {
-        assert!(0x1F > Op::BuildFullElement as u8);
+        assert!(0x1F > Op::CloneNodeChildren as u8);
         format!(
             "init: {:?}, {:?}, {:?}",
             unsafe { MSG_PTR_PTR as usize },
@@ -101,7 +110,7 @@ impl<V: VecLike + AsRef<[u8]>> MsgChannel<V> {
             JsInterpreter::new(
                 el,
                 wasm_bindgen::memory(),
-                MSG_POS_UPDATED_PTR as usize,
+                MSG_METADATA_PTR as usize,
                 MSG_PTR_PTR as usize,
                 STR_PTR_PTR as usize,
                 STR_LEN_PTR as usize,
@@ -114,6 +123,7 @@ impl<V: VecLike + AsRef<[u8]>> MsgChannel<V> {
             js_interpreter,
             current_op_byte_idx: 0,
             current_op_bit_pack_index: 0,
+            current_op_half_byte: false,
         }
     }
 }
@@ -124,77 +134,99 @@ impl MsgChannel<Vec<u8>> {
     }
 }
 
+// operations that have no booleans can be encoded as a half byte, these are placed first
 enum Op {
-    /// Pop the topmost node from our stack and append them to the node
-    AppendChildren = 0,
-
-    /// Replace a given (single) node with a handful of nodes currently on the stack.
-    ReplaceWith = 1,
-
-    /// Insert a number of nodes after a given node.
-    InsertAfter = 2,
-
-    /// Insert a number of nodes before a given node.
-    InsertBefore = 3,
-
-    /// Remove a particular node from the DOM
-    Remove = 4,
-
-    /// Create a new text node
-    CreateTextNode = 5,
-
-    /// Create a new element node
-    CreateElement = 6,
-
-    /// Set the textcontent of a node.
-    SetText = 7,
-
-    /// Set the value of a node's attribute.
-    SetAttribute = 8,
-
-    /// Remove an attribute from a node.
-    RemoveAttribute = 9,
-
-    /// Clones a node.
-    CloneNode = 10,
-
-    /// Clones the children of a node. (allows cloning fragments)
-    CloneNodeChildren = 11,
-
+    // All operations that have no booleans; can be encoded as a half byte
+    //
     /// Navigates to the last node to the first child of the current node.
-    FirstChild = 12,
+    FirstChild = 0,
 
     /// Navigates to the last node to the last child of the current node.
-    NextSibling = 13,
+    NextSibling = 1,
 
     /// Navigates to the last node to the parent of the current node.
-    ParentNode = 14,
+    ParentNode = 2,
 
     /// Stores the last node with a new id.
-    StoreWithId = 15,
+    StoreWithId = 3,
 
     /// Manually set the last node.
-    SetLastNode = 16,
+    SetLastNode = 4,
 
     /// Set id size
-    SetIdSize = 17,
+    SetIdSize = 5,
 
     /// Stop
-    Stop = 18,
+    Stop = 6,
 
     /// Build Full Element
-    BuildFullElement = 19,
+    BuildFullElement = 7,
+
+    // all operations that have booleans are encoded within the operation
+    //
+    /// Pop the topmost node from our stack and append them to the node
+    AppendChildren = 8,
+
+    /// Replace a given (single) node with a handful of nodes currently on the stack.
+    ReplaceWith = 9,
+
+    /// Insert a number of nodes after a given node.
+    InsertAfter = 10,
+
+    /// Insert a number of nodes before a given node.
+    InsertBefore = 11,
+
+    /// Remove a particular node from the DOM
+    Remove = 12,
+
+    /// Create a new text node
+    CreateTextNode = 13,
+
+    /// Create a new element node
+    CreateElement = 14,
+
+    /// Set the textcontent of a node.
+    SetText = 15,
+
+    /// Set the value of a node's attribute.
+    SetAttribute = 16,
+
+    /// Set the value of a node's attribute.
+    SetAttributeNs = 17,
+
+    /// Remove an attribute from a node.
+    RemoveAttribute = 18,
+
+    /// Remove an attribute from a node.
+    RemoveAttributeNs = 19,
+
+    /// Clones a node.
+    CloneNode = 20,
+
+    /// Clones the children of a node. (allows cloning fragments)
+    CloneNodeChildren = 21,
 }
 
 impl<V: VecLike> MsgChannel<V> {
+    /// Appends a number of nodes as children of the given node.
+    pub fn append_child(&mut self, root: MaybeId, child: NodeId) {
+        let root = self.check_maybe_id(root);
+        let child = self.check_id(child);
+        self.encode_op(Op::AppendChildren);
+        self.encode_maybe_id(root);
+        self.encode_bool(false);
+        self.encode_id(child);
+    }
+
     /// Appends a number of nodes as children of the given node.
     pub fn append_children(&mut self, root: MaybeId, children: Vec<NodeId>) {
         let root = self.check_maybe_id(root);
         for child in &children {
             self.check_id(*child);
         }
-        self.add_op(Op::AppendChildren);
+        self.encode_op(Op::AppendChildren);
         self.encode_maybe_id(root);
+        self.encode_bool(true);
         self.msg
             .extend_slice(&(children.len() as u32).to_le_bytes());
         for child in children {
@@ -208,7 +240,7 @@ impl<V: VecLike> MsgChannel<V> {
         for child in &nodes {
             self.check_id(*child);
         }
-        self.add_op(Op::ReplaceWith);
+        self.encode_op(Op::ReplaceWith);
         self.encode_maybe_id(root);
         self.msg.extend_slice(&(nodes.len() as u32).to_le_bytes());
         for node in nodes {
@@ -222,7 +254,7 @@ impl<V: VecLike> MsgChannel<V> {
         for child in &nodes {
             self.check_id(*child);
         }
-        self.add_op(Op::InsertAfter);
+        self.encode_op(Op::InsertAfter);
         self.encode_maybe_id(root);
         self.msg.extend_slice(&(nodes.len() as u32).to_le_bytes());
         for node in nodes {
@@ -236,7 +268,7 @@ impl<V: VecLike> MsgChannel<V> {
         for child in &nodes {
             self.check_id(*child);
         }
-        self.add_op(Op::InsertBefore);
+        self.encode_op(Op::InsertBefore);
         self.encode_maybe_id(root);
         self.msg.extend_slice(&(nodes.len() as u32).to_le_bytes());
         for node in nodes {
@@ -247,14 +279,14 @@ impl<V: VecLike> MsgChannel<V> {
     /// Remove a node from the DOM.
     pub fn remove(&mut self, id: MaybeId) {
         let root = self.check_maybe_id(id);
-        self.add_op(Op::Remove);
+        self.encode_op(Op::Remove);
         self.encode_maybe_id(root);
     }
 
     /// Create a new text node
     pub fn create_text_node(&mut self, text: Arguments, id: MaybeId) {
         let root = self.check_maybe_id(id);
-        self.add_op(Op::CreateTextNode);
+        self.encode_op(Op::CreateTextNode);
         self.encode_str(text);
         self.encode_maybe_id(root);
     }
@@ -262,7 +294,7 @@ impl<V: VecLike> MsgChannel<V> {
     /// Create a new element node
     pub fn create_element(&mut self, tag: Arguments, ns: Option<Arguments>, id: MaybeId) {
         let root = self.check_maybe_id(id);
-        self.add_op(Op::CreateElement);
+        self.encode_op(Op::CreateElement);
         self.encode_cachable_str(tag);
         if let Some(ns) = ns {
             self.encode_bool(true);
@@ -276,24 +308,32 @@ impl<V: VecLike> MsgChannel<V> {
     /// Set the textcontent of a node.
     pub fn set_text(&mut self, text: Arguments, root: MaybeId) {
         let root = self.check_maybe_id(root);
-        self.add_op(Op::SetText);
+        self.encode_op(Op::SetText);
         self.encode_maybe_id(root);
         self.encode_str(text);
     }
 
     /// Set the value of a node's attribute.
-    pub fn set_attribute(&mut self, attr: impl IntoAttribue, value: Arguments, root: MaybeId) {
+    pub fn set_attribute<A: IntoAttribue>(&mut self, attr: A, value: Arguments, root: MaybeId) {
         let root = self.check_maybe_id(root);
-        self.add_op(Op::SetAttribute);
+        if A::HAS_NS {
+            self.encode_op(Op::SetAttributeNs);
+        } else {
+            self.encode_op(Op::SetAttribute);
+        }
         self.encode_maybe_id(root);
         attr.encode(self);
         self.encode_str(value);
     }
 
     /// Remove an attribute from a node.
-    pub fn remove_attribute(&mut self, attr: impl IntoAttribue, root: MaybeId) {
+    pub fn remove_attribute<A: IntoAttribue>(&mut self, attr: A, root: MaybeId) {
         let root = self.check_maybe_id(root);
-        self.add_op(Op::RemoveAttribute);
+        if A::HAS_NS {
+            self.encode_op(Op::RemoveAttributeNs);
+        } else {
+            self.encode_op(Op::RemoveAttribute);
+        }
         self.encode_maybe_id(root);
         attr.encode(self);
     }
@@ -302,7 +342,7 @@ impl<V: VecLike> MsgChannel<V> {
     pub fn clone_node(&mut self, id: MaybeId, new_id: MaybeId) {
         let root = self.check_maybe_id(id);
         let new_id = self.check_maybe_id(new_id);
-        self.add_op(Op::CloneNode);
+        self.encode_op(Op::CloneNode);
         self.encode_maybe_id(root);
         self.encode_maybe_id(new_id);
     }
@@ -313,7 +353,7 @@ impl<V: VecLike> MsgChannel<V> {
         for id in &new_ids {
             self.check_id(*id);
         }
-        self.add_op(Op::CloneNodeChildren);
+        self.encode_op(Op::CloneNodeChildren);
         self.encode_maybe_id(root);
         for id in new_ids {
             self.encode_maybe_id_with_byte_bool(Some(id.to_le_bytes()));
@@ -322,36 +362,36 @@ impl<V: VecLike> MsgChannel<V> {
 
     /// Move the last node to the first child
     pub fn first_child(&mut self) {
-        self.add_op(Op::FirstChild);
+        self.encode_op(Op::FirstChild);
     }
 
     /// Move the last node to the next sibling
     pub fn next_sibling(&mut self) {
-        self.add_op(Op::NextSibling);
+        self.encode_op(Op::NextSibling);
     }
 
     /// Move the last node to the parent node
     pub fn parent_node(&mut self) {
-        self.add_op(Op::ParentNode);
+        self.encode_op(Op::ParentNode);
     }
 
     /// Store the last node with the given id. This is useful when traversing the document tree.
     pub fn store_with_id(&mut self, id: NodeId) {
         let id = self.check_id(id);
-        self.add_op(Op::StoreWithId);
+        self.encode_op(Op::StoreWithId);
         self.encode_id(id);
     }
 
     /// Set the last node to the given id. The last node can be used to traverse the document tree without passing objects between wasm and js every time.
     pub fn set_last_node(&mut self, id: NodeId) {
         let id = self.check_id(id);
-        self.add_op(Op::SetLastNode);
+        self.encode_op(Op::SetLastNode);
         self.encode_id(id);
     }
 
     /// Build a full element, slightly more efficent than creating the element creating the element with `create_element` and then setting the attributes.
     pub fn build_full_element(&mut self, el: impl ElementBuilderExt) {
-        self.add_op(Op::BuildFullElement);
+        self.encode_op(Op::BuildFullElement);
         el.encode(self, get_id_size());
     }
 
@@ -414,7 +454,7 @@ impl<V: VecLike> MsgChannel<V> {
             _ => unreachable!(),
         };
         set_id_size(nearest_larger_power_of_two);
-        self.add_op(Op::SetIdSize);
+        self.encode_op(Op::SetIdSize);
         self.msg.add_element(nearest_larger_power_of_two);
     }
 
@@ -433,23 +473,35 @@ impl<V: VecLike> MsgChannel<V> {
     }
 
     #[inline]
-    fn add_op(&mut self, op: Op) {
-        self.current_op_byte_idx = self.msg.len();
-        self.msg.add_element(op as u8);
-        self.current_op_bit_pack_index = 0;
+    fn encode_op(&mut self, op: Op) {
+        let u8_op = op as u8;
+        let half_byte = u8_op < Op::BuildFullElement as u8;
+        if self.current_op_half_byte && half_byte {
+            self.msg.modify(self.current_op_byte_idx, |op| {
+                let new = 1 | op | u8_op << 4;
+                new
+            });
+            self.current_op_half_byte = false;
+        } else {
+            self.current_op_byte_idx = self.msg.len();
+            self.msg.add_element(u8_op << 1);
+
+            self.current_op_bit_pack_index = 0;
+            self.current_op_half_byte = half_byte;
+        }
     }
 
     #[inline]
-    fn encode_bool(&mut self, value: bool) {
-        if self.current_op_bit_pack_index < 3 {
+    pub(crate) fn encode_bool(&mut self, value: bool) {
+        if self.current_op_bit_pack_index < 2 {
             if value {
                 self.msg.modify(self.current_op_byte_idx, |op| {
-                    op | (1 << (self.current_op_bit_pack_index + 5))
+                    op | (1 << (self.current_op_bit_pack_index + 6))
                 });
             }
             self.current_op_bit_pack_index += 1;
         } else {
-            todo!("handle more than 3 bools in a op");
+            todo!("handle more than 2 bools in a op");
         }
     }
 
@@ -457,19 +509,19 @@ impl<V: VecLike> MsgChannel<V> {
     #[inline]
     pub fn flush(&mut self) {
         assert_eq!(0usize.to_le_bytes().len(), 32 / 8);
-        self.add_op(Op::Stop);
+        self.encode_op(Op::Stop);
         let msg_ptr = self.msg.as_ref().as_ptr() as usize;
         // the pointer will only be updated when the message vec is resized, so we have a flag to check if the pointer has changed to avoid unnecessary decoding
-        if unsafe { *MSG_PTR_PTR } != msg_ptr || unsafe { *MSG_POS_UPDATED_PTR } == 2 {
+        if unsafe { *MSG_PTR_PTR } != msg_ptr || unsafe { *MSG_METADATA_PTR } == 255 {
             unsafe {
                 let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_PTR_PTR);
                 *mut_ptr_ptr = msg_ptr;
-                let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_POS_UPDATED_PTR);
+                let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
                 *mut_ptr_ptr = 1;
             }
         } else {
             unsafe {
-                let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_POS_UPDATED_PTR);
+                let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
                 *mut_ptr_ptr = 0;
             }
         }
@@ -478,6 +530,11 @@ impl<V: VecLike> MsgChannel<V> {
             *mut_str_ptr_ptr = self.str_buf.as_ref().as_ptr() as usize;
             let mut_str_len_ptr: *mut usize = std::mem::transmute(STR_LEN_PTR);
             *mut_str_len_ptr = self.str_buf.len() as usize;
+            let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
+            *mut_ptr_ptr |= (!self.str_buf.is_empty() as usize) << 1;
+            if *mut_str_len_ptr < 100 {
+                *mut_ptr_ptr |= (self.str_buf.as_ref().is_ascii() as usize) << 2;
+            }
         }
         if last_needs_memory() {
             update_last_memory(wasm_bindgen::memory())

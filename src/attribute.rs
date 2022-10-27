@@ -5,17 +5,29 @@ use crate::value::IntoValue;
 use crate::MsgChannel;
 
 pub trait IntoAttribue {
+    const HAS_NS: bool;
     fn encode<V: VecLike>(self, v: &mut MsgChannel<V>);
+    fn encode_u8_discriminant<V: VecLike>(self, v: &mut MsgChannel<V>);
 }
 
 impl IntoAttribue for Attribute {
+    const HAS_NS: bool = false;
     fn encode<V: VecLike>(self, v: &mut MsgChannel<V>) {
+        v.encode_bool(false);
+        v.msg.add_element(self as u8)
+    }
+    fn encode_u8_discriminant<V: VecLike>(self, v: &mut MsgChannel<V>) {
         v.msg.add_element(self as u8)
     }
 }
 
 impl<S: AsRef<str>> IntoAttribue for S {
+    const HAS_NS: bool = false;
     fn encode<V: VecLike>(self, v: &mut MsgChannel<V>) {
+        v.encode_bool(true);
+        v.encode_cachable_str(format_args!("{}", self.as_ref()));
+    }
+    fn encode_u8_discriminant<V: VecLike>(self, v: &mut MsgChannel<V>) {
         v.msg.add_element(255);
         v.encode_cachable_str(format_args!("{}", self.as_ref()));
     }
@@ -48,7 +60,7 @@ macro_rules! impl_many_attrs {
             fn encode<V: VecLike>(self, v: &mut MsgChannel<V>) {
                 v.msg.add_element(self.len() as u8);
                 let ($(($i, $m),)+) = self;
-                $($i.encode(v);$m.encode(v);)+
+                $($i.encode_u8_discriminant(v);$m.encode(v);)+
             }
         }
     };

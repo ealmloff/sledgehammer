@@ -21,9 +21,9 @@ static mut MSG_PTR: usize = 0;
 #[used]
 static mut MSG_PTR_PTR: *const usize = unsafe { &MSG_PTR } as *const usize;
 #[used]
-static mut MSG_POS_UPDATED: u8 = 2;
+static mut MSG_POS_UPDATED: u8 = 255;
 #[used]
-static mut MSG_POS_UPDATED_PTR: *const u8 = unsafe { &MSG_POS_UPDATED } as *const u8;
+static mut MSG_METADATA_PTR: *const u8 = unsafe { &MSG_POS_UPDATED } as *const u8;
 #[used]
 static mut STR_PTR: usize = 0;
 #[used]

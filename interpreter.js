@@ -1,19 +1,273 @@
 export function work_last_created() {
-    window.interpreter.Work();
+    interpreter.Work();
 }
 
 export function last_needs_memory() {
-    return window.interpreter.view.buffer.byteLength === 0;
+    return interpreter.view.buffer.byteLength === 0;
 }
 
 export function update_last_memory(mem) {
-    window.interpreter.UpdateMemory(mem);
+    interpreter.UpdateMemory(mem);
 }
 
-let parent, len, children, node, ns, attr, op, i, name, value, element, ptr;
+let parent, len, children, node, ns, attr, op, i, name, value, element, ptr, metadata, pos, end, out, char, numAttributes, endRounded, halfByte, dis, interpreter;
+
+const opLookup = [
+    // first child
+    function () {
+        interpreter.lastNode = interpreter.lastNode.firstChild;
+    },
+    // next sibling
+    function () {
+        interpreter.lastNode = interpreter.lastNode.nextSibling;
+    },
+    // parent
+    function () {
+        interpreter.lastNode = interpreter.lastNode.parentNode;
+    },
+    // store with id
+    function () {
+        interpreter.nodes[interpreter.decodeId()] = interpreter.lastNode;
+    },
+    // set last node
+    function () {
+        interpreter.lastNode = interpreter.nodes[interpreter.decodeId()];
+    },
+    // set id size
+    function () {
+        interpreter.idSize = interpreter.view.getUint8(interpreter.u8BufPos++);
+        interpreter.updateDecodeIdFn();
+    },
+    // stop
+    function () {
+        console.error("stop");
+    },
+    // create full element
+    function () {
+        interpreter.createFullElement();
+    },
+    // append children
+    function () {
+        // the first bool is encoded as op & (1 << 6)
+        if (op & 0x40) {
+            parent = interpreter.nodes[interpreter.decodeId()];
+        }
+        else {
+            parent = interpreter.lastNode;
+        }
+        // the second bool is encoded as op & (1 << 7)
+        // second bool encodes if there are many children
+        if (op & 0x80) {
+            len = interpreter.decodeU32();
+            for (i = 0; i < len; i++) {
+                parent.appendChild(interpreter.nodes[interpreter.decodeId()]);
+            }
+        }
+        else {
+            const id = interpreter.decodeId();
+            parent.appendChild(interpreter.nodes[id]);
+        }
+    },
+    // replace with
+    function () {
+        // the first bool is encoded as op & (1 << 6)
+        if (op & 0x40) {
+            parent = interpreter.nodes[interpreter.decodeId()];
+        }
+        else {
+            parent = interpreter.lastNode;
+        }
+        len = interpreter.decodeU32();
+        if (len === 1) {
+            parent.replaceWith(interpreter.nodes[interpreter.decodeId()]);
+        }
+        else {
+            children = [];
+            for (i = 0; i < len; i++) {
+                children.push(interpreter.nodes[interpreter.decodeId()]);
+            }
+            parent.replaceWith(...children);
+        }
+    },
+    // insert after
+    function () {
+        // the first bool is encoded as op & (1 << 6)
+        if (op & 0x40) {
+            parent = interpreter.nodes[interpreter.decodeId()];
+        }
+        else {
+            parent = interpreter.lastNode;
+        }
+        len = interpreter.decodeU32();
+        if (len === 1) {
+            parent.after(interpreter.nodes[interpreter.decodeId()]);
+        } else {
+            children = [];
+            for (i = 0; i < len; i++) {
+                children.push(interpreter.nodes[interpreter.decodeId()]);
+            }
+            parent.after(...children);
+        }
+    },
+    // insert before
+    function () {
+        // the first bool is encoded as op & (1 << 6)
+        if (op & 0x40) {
+            parent = interpreter.nodes[interpreter.decodeId()];
+        }
+        else {
+            parent = interpreter.lastNode;
+        }
+        len = interpreter.decodeU32();
+        if (len === 1) {
+            parent.before(interpreter.nodes[interpreter.decodeId()]);
+        } else {
+            children = [];
+            for (i = 0; i < len; i++) {
+                children.push(interpreter.nodes[interpreter.decodeId()]);
+            }
+            parent.before(...children);
+        }
+    },
+    // remove
+    function () {
+        // the first bool is encoded as op & (1 << 6)
+        if (op & 0x40) {
+            interpreter.nodes[interpreter.decodeId()].remove();
+        }
+        else {
+            interpreter.lastNode.remove();
+        }
+    },
+    // create text node
+    function () {
+        interpreter.lastNode = document.createTextNode(interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16()));
+        // the first bool is encoded as op & (1 << 6)
+        if (op & 0x40) {
+            interpreter.nodes[interpreter.decodeId()] = interpreter.lastNode;
+        }
+    },
+    // create element
+    function () {
+        name = interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16());
+        // the first bool is encoded as op & (1 << 6)
+        if (op & 0x40) {
+            interpreter.lastNode = document.createElementNS(name, interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16()));
+        }
+        else {
+            interpreter.lastNode = document.createElement(name);
+        }
+        // the second bool is encoded as op & (1 << 7)
+        if (op & 0x80) {
+            interpreter.nodes[interpreter.decodeId()] = interpreter.lastNode;
+        }
+    },
+    // set text
+    function () {
+        // the first bool is encoded as op & (1 << 6)
+        if (op & 0x40) {
+            interpreter.nodes[interpreter.decodeId()].textContent = interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16());;
+        }
+        else {
+            interpreter.lastNode.textContent = interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16());;
+        }
+    },
+    // set attribute
+    function () {
+        // the first bool is encoded as op & (1 << 6)
+        if (op & 0x40) {
+            node = interpreter.nodes[interpreter.decodeId()];
+        }
+        else {
+            node = interpreter.lastNode;
+        }
+        // the second bool is encoded as op & (1 << 7)
+        if (op & 0x80) {
+            node.setAttribute(interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16()), interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16()));
+        } else {
+            node.setAttribute(attrs[interpreter.view.getUint8(interpreter.u8BufPos++)], interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16()));
+        }
+    },
+    // set attribute ns
+    function () {
+        // the first bool is encoded as op & (1 << 6)
+        if (op & 0x40) {
+            node = interpreter.nodes[interpreter.decodeId()];
+        }
+        else {
+            node = interpreter.lastNode;
+        }
+        attr = interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16());
+        ns = interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16());
+        value = interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16());
+        if (ns === "style") {
+            // @ts-ignore
+            node.style[attr] = value;
+        } else if (ns != null || ns != undefined) {
+            node.setAttributeNS(ns, attr, value);
+        }
+    },
+    // remove attribute
+    function () {
+        // the first bool is encoded as op & (1 << 6)
+        if (op & 0x40) {
+            node = interpreter.nodes[interpreter.decodeId()];
+        }
+        else {
+            node = interpreter.lastNode;
+        }
+        // the second bool is encoded as op & (1 << 7)
+        if (op & 0x80) {
+            node.removeAttribute(interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16()));
+        } else {
+            node.removeAttribute(attrs[interpreter.view.getUint8(interpreter.u8BufPos++)]);
+        }
+    },
+    // remove attribute ns
+    function () {
+        // the first bool is encoded as op & (1 << 6)
+        if (op & 0x40) {
+            node = interpreter.nodes[interpreter.decodeId()];
+        }
+        else {
+            node = interpreter.lastNode;
+        }
+        attr = interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16());
+        node.removeAttributeNS(interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16()), attr);
+    },
+    // clone node
+    function () {
+        // the first bool is encoded as op & (1 << 6)
+        if (op & 0x40) {
+            interpreter.lastNode = interpreter.nodes[interpreter.decodeId()].cloneNode(true);
+        }
+        else {
+            interpreter.lastNode = interpreter.lastNode.cloneNode(true);
+        }
+        // the second bool is encoded as op & (1 << 7)
+        if (op & 0x80) {
+            interpreter.nodes[interpreter.decodeId()] = interpreter.lastNode;
+        }
+    },
+    // clone node children
+    function () {
+        // the first bool is encoded as op & (1 << 6)
+        if (op & 0x40) {
+            node = interpreter.nodes[interpreter.decodeId()].cloneNode(true).firstChild;
+        }
+        else {
+            node = interpreter.lastNode.cloneNode(true).firstChild;
+        }
+        for (; node !== null; node = node.nextSibling) {
+            if (interpreter.view.getUint8(interpreter.u8BufPos++) === 1) {
+                interpreter.nodes[interpreter.decodeId()] = node;
+            }
+        }
+    },
+];
 
 export class JsInterpreter {
-    constructor(root, mem, _ptr_updated_ptr, _ptr_ptr, _str_ptr_ptr, _str_len_ptr) {
+    constructor(root, mem, _metadata_ptr, _ptr_ptr, _str_ptr_ptr, _str_len_ptr) {
         this.root = root;
         this.lastNode = root;
         this.nodes = [root];
@@ -21,14 +275,14 @@ export class JsInterpreter {
         this.view = new DataView(mem.buffer);
         this.idSize = 1;
         this.last_start_pos;
-        this.ptr_updated_ptr = _ptr_updated_ptr;
+        this.metadata_ptr = _metadata_ptr;
         this.ptr_ptr = _ptr_ptr;
         this.str_ptr_ptr = _str_ptr_ptr;
         this.str_len_ptr = _str_len_ptr;
         this.strings = "";
         this.strPos = 0;
         this.decoder = new TextDecoder();
-        window.interpreter = this;
+        interpreter = this;
         this.updateDecodeIdFn();
     }
 
@@ -41,263 +295,58 @@ export class JsInterpreter {
     }
 
     Work() {
-        if (this.view.getUint8(this.ptr_updated_ptr) === 1) {
+        metadata = this.view.getUint8(this.metadata_ptr);
+        if (metadata & 0x01) {
             this.last_start_pos = this.view.getUint32(this.ptr_ptr, true);
         }
         this.u8BufPos = this.last_start_pos;
-        len = this.view.getUint32(this.str_len_ptr, true);
-        if (len > 0) {
+        if (metadata & 0x02) {
+            len = this.view.getUint32(this.str_len_ptr, true);
             ptr = this.view.getUint32(this.str_ptr_ptr, true);
             // for small strings decoding them in javascript to avoid the overhead of native calls is faster
-            if (len < 25) {
-                this.strings = this.utf8Decode(ptr, len);
+            if (len < 100) {
+                // the fourth boolean contains information about whether the string is all ascii or utf8
+                if (metadata & 0x04) {
+                    this.strings = this.batchedAsciiDecode(ptr, len);
+                }
+                else {
+                    this.strings = this.utf8Decode(ptr, len);
+                }
             }
             else {
                 this.strings = this.decoder.decode(new DataView(this.view.buffer, ptr, len));
             }
             this.strPos = 0;
         }
+        op = this.view.getUint8(this.u8BufPos++);
+        halfByte = op & 1;
+        if (halfByte) {
+            dis = (op & 0x0E) >> 1;
+        }
+        else {
+            dis = (op & 0x3E) >> 1;
+        }
+
         // this is faster than a while(true) loop
         for (; ;) {
-            op = this.view.getUint8(this.u8BufPos++);
-            // first bool: op & 0x20
-            // second bool: op & 0x40
-            // third bool: op & 0x80
-            switch (op & 0x1F) {
-                // append children
-                case 0:
-                    // the first bool is encoded as op & (1 << 5)
-                    if (op & 0x20) {
-                        parent = this.nodes[this.decodeId()];
-                    }
-                    else {
-                        parent = this.lastNode;
-                    }
-                    len = this.decodeU32();
-                    for (i = 0; i < len; i++) {
-                        parent.appendChild(this.nodes[this.decodeId()]);
-                    }
-                    break;
-                // replace with
-                case 1:
-                    // the first bool is encoded as op & (1 << 5)
-                    if (op & 0x20) {
-                        parent = this.nodes[this.decodeId()];
-                    }
-                    else {
-                        parent = this.lastNode;
-                    }
-                    len = this.decodeU32();
-                    if (len === 1) {
-                        parent.replaceWith(this.nodes[this.decodeId()]);
-                    }
-                    else {
-                        children = [];
-                        for (i = 0; i < len; i++) {
-                            children.push(this.nodes[this.decodeId()]);
-                        }
-                        parent.replaceWith(...children);
-                    }
-                    break;
-                // insert after
-                case 2:
-                    // the first bool is encoded as op & (1 << 5)
-                    if (op & 0x20) {
-                        parent = this.nodes[this.decodeId()];
-                    }
-                    else {
-                        parent = this.lastNode;
-                    }
-                    len = this.decodeU32();
-                    if (len === 1) {
-                        parent.after(this.nodes[this.decodeId()]);
-                    } else {
-                        children = [];
-                        for (i = 0; i < len; i++) {
-                            children.push(this.nodes[this.decodeId()]);
-                        }
-                        parent.after(...children);
-                    }
-                    break;
-                // insert before
-                case 3:
-                    // the first bool is encoded as op & (1 << 5)
-                    if (op & 0x20) {
-                        parent = this.nodes[this.decodeId()];
-                    }
-                    else {
-                        parent = this.lastNode;
-                    }
-                    len = this.decodeU32();
-                    if (len === 1) {
-                        parent.before(this.nodes[this.decodeId()]);
-                    } else {
-                        children = [];
-                        for (i = 0; i < len; i++) {
-                            children.push(this.nodes[this.decodeId()]);
-                        }
-                        parent.before(...children);
-                    }
-                    break;
-                // remove
-                case 4:
-                    // the first bool is encoded as op & (1 << 5)
-                    if (op & 0x20) {
-                        this.nodes[this.decodeId()].remove();
-                    }
-                    else {
-                        this.lastNode.remove();
-                    }
-                    break;
-                // create text node
-                case 5:
-                    this.lastNode = document.createTextNode(this.strings.substring(this.strPos, this.strPos += this.decodeU16()));
-                    // the first bool is encoded as op & (1 << 5)
-                    if (op & 0x20) {
-                        this.nodes[this.decodeId()] = this.lastNode;
-                    }
-                    break;
-                // create element
-                case 6:
-                    name = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
-                    // the first bool is encoded as op & (1 << 5)
-                    if (op & 0x20) {
-                        this.lastNode = document.createElementNS(name, this.strings.substring(this.strPos, this.strPos += this.decodeU16()));
-                    }
-                    else {
-                        this.lastNode = document.createElement(name);
-                    }
-                    // the second bool is encoded as op & (1 << 6)
-                    if (op & 0x40) {
-                        this.nodes[this.decodeId()] = this.lastNode;
-                    }
-                    break;
-                // set text
-                case 7:
-                    // the first bool is encoded as op & (1 << 5)
-                    if (op & 0x20) {
-                        this.nodes[this.decodeId()].textContent = this.strings.substring(this.strPos, this.strPos += this.decodeU16());;
-                    }
-                    else {
-                        this.lastNode.textContent = this.strings.substring(this.strPos, this.strPos += this.decodeU16());;
-                    }
-                    break;
-                // set attribute
-                case 8:
-                    // the first bool is encoded as op & (1 << 5)
-                    if (op & 0x20) {
-                        node = this.nodes[this.decodeId()];
-                    }
-                    else {
-                        node = this.lastNode;
-                    }
-                    attr = this.view.getUint8(this.u8BufPos++);
-                    switch (attr) {
-                        case 254:
-                            attr = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
-                            ns = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
-                            value = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
-                            if (ns === "style") {
-                                // @ts-ignore
-                                node.style[attr] = value;
-                            } else if (ns != null || ns != undefined) {
-                                node.setAttributeNS(ns, attr, value);
-                            }
-                            break;
-                        case 255:
-                            node.setAttribute(this.strings.substring(this.strPos, this.strPos += this.decodeU16()), this.strings.substring(this.strPos, this.strPos += this.decodeU16()));
-                            break;
-                        default:
-                            node.setAttribute(convertAttribute(attr), this.strings.substring(this.strPos, this.strPos += this.decodeU16()));
-                            break;
-                    }
-                    break;
-                // remove attribute
-                case 9:
-                    // the first bool is encoded as op & (1 << 5)
-                    if (op & 0x20) {
-                        node = this.nodes[this.decodeId()];
-                    }
-                    else {
-                        node = this.lastNode;
-                    }
-                    attr = this.view.getUint8(this.u8BufPos++);
-                    switch (attr) {
-                        case 254:
-                            attr = this.strings.substring(this.strPos, this.strPos += this.decodeU16());
-                            node.removeAttributeNS(this.strings.substring(this.strPos, this.strPos += this.decodeU16()), attr);
-                            break;
-                        case 255:
-                            node.removeAttribute(this.strings.substring(this.strPos, this.strPos += this.decodeU16()));
-                            break;
-                        default:
-                            node.removeAttribute(convertAttribute(attr));
-                            break;
-                    }
-                    break;
-                // clone node
-                case 10:
-                    // the first bool is encoded as op & (1 << 5)
-                    if (op & 0x20) {
-                        this.lastNode = this.nodes[this.decodeId()].cloneNode(true);
-                    }
-                    else {
-                        this.lastNode = this.lastNode.cloneNode(true);
-                    }
-                    // the second bool is encoded as op & (1 << 6)
-                    if (op & 0x40) {
-                        this.nodes[this.decodeId()] = this.lastNode;
-                    }
-                    break;
-                // clone node children
-                case 11:
-                    // the first bool is encoded as op & (1 << 5)
-                    if (op & 0x20) {
-                        node = this.nodes[this.decodeId()].cloneNode(true).firstChild;
-                    }
-                    else {
-                        node = this.lastNode.cloneNode(true).firstChild;
-                    }
-                    for (; node !== null; node = node.nextSibling) {
-                        if (this.view.getUint8(this.u8BufPos++) === 1) {
-                            this.nodes[this.decodeId()] = node;
-                        }
-                    }
-                    break;
-                // first child
-                case 12:
-                    this.lastNode = this.lastNode.firstChild;
-                    break;
-                // next sibling
-                case 13:
-                    this.lastNode = this.lastNode.nextSibling;
-                    break;
-                // parent
-                case 14:
-                    this.lastNode = this.lastNode.parentNode;
-                    break;
-                // store with id
-                case 15:
-                    this.nodes[this.decodeId()] = this.lastNode;
-                    break;
-                // set last node
-                case 16:
-                    this.lastNode = this.nodes[this.decodeId()];
-                    break;
-                // set id size
-                case 17:
-                    this.idSize = this.view.getUint8(this.u8BufPos++);
-                    this.updateDecodeIdFn();
-                    break;
-                // stop
-                case 18:
-                    return;
-                // create full element
-                case 19:
-                    this.createFullElement();
-                default:
-                    this.u8BufPos--;
-                    return;
+            // first bool: op & 0x40
+            // second bool: op & 0x80
+            opLookup[dis]();
+            if (halfByte) {
+                dis = op >> 4;
+                halfByte = false;
+            } else {
+                op = this.view.getUint8(this.u8BufPos++);
+                halfByte = op & 1;
+                if (halfByte) {
+                    dis = (op & 0x0E) >> 1;
+                }
+                else {
+                    dis = (op & 0x3E) >> 1;
+                }
+            }
+            if (dis === 6) {
+                return;
             }
         }
     }
@@ -308,15 +357,15 @@ export class JsInterpreter {
             return document.createElement(this.strings.substring(this.strPos, this.strPos += this.decodeU16()));
         }
         else {
-            return document.createElement(convertElement(element));
+            return document.createElement(els[element]);
         }
     }
 
     createFullElement() {
         const parent_id = this.decodeMaybeIdByteBool(),
-            parent_element = this.createElement(),
-            numAttributes = this.view.getUint8(this.u8BufPos++);
-        for (let i = 0; i < numAttributes; i++) {
+            parent_element = this.createElement();
+        numAttributes = this.view.getUint8(this.u8BufPos++);
+        for (i = 0; i < numAttributes; i++) {
             attr = this.view.getUint8(this.u8BufPos++);
             switch (attr) {
                 case 254:
@@ -329,7 +378,7 @@ export class JsInterpreter {
                     parent_element.setAttribute(this.strings.substring(this.strPos, this.strPos += this.decodeU16()), this.strings.substring(this.strPos, this.strPos += this.decodeU16()));
                     break;
                 default:
-                    parent_element.setAttribute(convertAttribute(attr), this.strings.substring(this.strPos, this.strPos += this.decodeU16()));
+                    parent_element.setAttribute(attrs[attr], this.strings.substring(this.strPos, this.strPos += this.decodeU16()));
                     break;
             }
         }
@@ -394,24 +443,23 @@ export class JsInterpreter {
     }
 
     utf8Decode(start, byteLength) {
-        let pos = start;
-        const end = pos + byteLength;
-        let out = "";
-        let byte1;
+        pos = start;
+        end = pos + byteLength;
+        out = "";
         while (pos < end) {
-            byte1 = this.view.getUint8(pos++);
-            if ((byte1 & 0x80) === 0) {
+            char = this.view.getUint8(pos++);
+            if ((char & 0x80) === 0) {
                 // 1 byte
-                out += String.fromCharCode(byte1);
-            } else if ((byte1 & 0xe0) === 0xc0) {
+                out += String.fromCharCode(char);
+            } else if ((char & 0xe0) === 0xc0) {
                 // 2 bytes
-                out += String.fromCharCode(((byte1 & 0x1f) << 6) | (this.view.getUint8(pos++) & 0x3f));
-            } else if ((byte1 & 0xf0) === 0xe0) {
+                out += String.fromCharCode(((char & 0x1f) << 6) | (this.view.getUint8(pos++) & 0x3f));
+            } else if ((char & 0xf0) === 0xe0) {
                 // 3 bytes
-                out += String.fromCharCode(((byte1 & 0x1f) << 12) | ((this.view.getUint8(pos++) & 0x3f) << 6) | (this.view.getUint8(pos++) & 0x3f));
-            } else if ((byte1 & 0xf8) === 0xf0) {
+                out += String.fromCharCode(((char & 0x1f) << 12) | ((this.view.getUint8(pos++) & 0x3f) << 6) | (this.view.getUint8(pos++) & 0x3f));
+            } else if ((char & 0xf8) === 0xf0) {
                 // 4 bytes
-                let unit = ((byte1 & 0x07) << 0x12) | ((this.view.getUint8(pos++) & 0x3f) << 0x0c) | ((this.view.getUint8(pos++) & 0x3f) << 0x06) | (this.view.getUint8(pos++) & 0x3f);
+                let unit = ((char & 0x07) << 0x12) | ((this.view.getUint8(pos++) & 0x3f) << 0x0c) | ((this.view.getUint8(pos++) & 0x3f) << 0x06) | (this.view.getUint8(pos++) & 0x3f);
                 if (unit > 0xffff) {
                     unit -= 0x10000;
                     out += String.fromCharCode(((unit >>> 10) & 0x3ff) | 0xd800);
@@ -419,10 +467,26 @@ export class JsInterpreter {
                 }
                 out += String.fromCharCode(unit);
             } else {
-                out += String.fromCharCode(byte1);
+                out += String.fromCharCode(char);
             }
         }
 
+        return out;
+    }
+
+    batchedAsciiDecode(start, byteLength) {
+        pos = start;
+        end = pos + byteLength;
+        out = "";
+        endRounded = pos + ((byteLength / 4) | 0) * 4;
+        while (pos < endRounded) {
+            char = this.view.getUint32(pos);
+            out += String.fromCharCode(char >> 24, (char & 0x00FF0000) >> 16, (char & 0x0000FF00) >> 8, (char & 0x000000FF));
+            pos += 4;
+        }
+        while (pos < end) {
+            out += String.fromCharCode(this.view.getUint8(pos++));
+        }
         return out;
     }
 }
@@ -563,9 +627,6 @@ const els = [
     "wbr",
     "xmp",
 ];
-function convertElement(id) {
-    return els[id];
-}
 
 const attrs = [
     "accept-charset",
@@ -722,9 +783,6 @@ const attrs = [
     "width",
     "wrap",
 ];
-function convertAttribute(id) {
-    return attrs[id];
-}
 
 const events = [
     "abort",
@@ -954,6 +1012,3 @@ const events = [
     "webkitmouseforcewillbegin",
     "wheel",
 ];
-function convertEvent(id) {
-    return events[id];
-}
