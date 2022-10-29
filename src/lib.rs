@@ -32,7 +32,6 @@ static mut STR_PTR_PTR: *const usize = unsafe { &STR_PTR } as *const usize;
 static mut STR_LEN: usize = 0;
 #[used]
 static mut STR_LEN_PTR: *const usize = unsafe { &STR_LEN } as *const usize;
-static mut ID_SIZE: u8 = 1;
 
 // #[wasm_bindgen(module = "/interpreter_opt.js")]
 #[wasm_bindgen(module = "/interpreter.js")]
@@ -68,14 +67,4 @@ extern "C" {
     #[allow(unused)]
     #[wasm_bindgen(method)]
     pub(crate) fn GetNode(this: &JsInterpreter, id: u32) -> Node;
-}
-
-fn get_id_size() -> u8 {
-    unsafe { ID_SIZE }
-}
-
-fn set_id_size(size: u8) {
-    unsafe {
-        ID_SIZE = size;
-    }
 }

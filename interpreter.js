@@ -31,13 +31,13 @@ function exOp() {
             break;
         // store with id
         case 3:
-            inptr.nodes[inptr.decodeId()] = inptr.lastNode;
-            inptr.u8BufPos += inptr.idSize;
+            inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)] = inptr.lastNode;
+            inptr.u8BufPos += 4;
             break;
         // set last node
         case 4:
-            inptr.lastNode = inptr.nodes[inptr.decodeId()];
-            inptr.u8BufPos += inptr.idSize;
+            inptr.lastNode = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
+            inptr.u8BufPos += 4;
             break;
         // set id size
         case 5:
@@ -55,8 +55,8 @@ function exOp() {
         case 8:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
-                parent = inptr.nodes[inptr.decodeId()];
-                inptr.u8BufPos += inptr.idSize;
+                parent = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
+                inptr.u8BufPos += 4;
             }
             else {
                 parent = inptr.lastNode;
@@ -66,21 +66,21 @@ function exOp() {
             if (op & 0x40) {
                 len = inptr.decodeU32();
                 for (i = 0; i < len; i++) {
-                    parent.appendChild(inptr.nodes[inptr.decodeId()]);
-                    inptr.u8BufPos += inptr.idSize;
+                    parent.appendChild(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
+                    inptr.u8BufPos += 4;
                 }
             }
             else {
-                parent.appendChild(inptr.nodes[inptr.decodeId()]);
-                inptr.u8BufPos += inptr.idSize;
+                parent.appendChild(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
+                inptr.u8BufPos += 4;
             }
             break;
         // replace with
         case 9:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
-                parent = inptr.nodes[inptr.decodeId()];
-                inptr.u8BufPos += inptr.idSize;
+                parent = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
+                inptr.u8BufPos += 4;
             }
             else {
                 parent = inptr.lastNode;
@@ -89,22 +89,22 @@ function exOp() {
                 len = inptr.decodeU32();
                 children = [];
                 for (i = 0; i < len; i++) {
-                    children.push(inptr.nodes[inptr.decodeId()]);
-                    inptr.u8BufPos += inptr.idSize;
+                    children.push(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
+                    inptr.u8BufPos += 4;
                 }
                 parent.replaceWith(...children);
             }
             else {
-                parent.replaceWith(inptr.nodes[inptr.decodeId()]);
-                inptr.u8BufPos += inptr.idSize;
+                parent.replaceWith(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
+                inptr.u8BufPos += 4;
             }
             break;
         // insert after
         case 10:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
-                parent = inptr.nodes[inptr.decodeId()];
-                inptr.u8BufPos += inptr.idSize;
+                parent = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
+                inptr.u8BufPos += 4;
             }
             else {
                 parent = inptr.lastNode;
@@ -113,21 +113,21 @@ function exOp() {
                 len = inptr.decodeU32();
                 children = [];
                 for (i = 0; i < len; i++) {
-                    children.push(inptr.nodes[inptr.decodeId()]);
-                    inptr.u8BufPos += inptr.idSize;
+                    children.push(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
+                    inptr.u8BufPos += 4;
                 }
                 parent.after(...children);
             } else {
-                parent.after(inptr.nodes[inptr.decodeId()]);
-                inptr.u8BufPos += inptr.idSize;
+                parent.after(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
+                inptr.u8BufPos += 4;
             }
             break;
         // insert before
         case 11:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
-                parent = inptr.nodes[inptr.decodeId()];
-                inptr.u8BufPos += inptr.idSize;
+                parent = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
+                inptr.u8BufPos += 4;
             }
             else {
                 parent = inptr.lastNode;
@@ -136,21 +136,21 @@ function exOp() {
                 len = inptr.decodeU32();
                 children = [];
                 for (i = 0; i < len; i++) {
-                    children.push(inptr.nodes[inptr.decodeId()]);
-                    inptr.u8BufPos += inptr.idSize;
+                    children.push(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
+                    inptr.u8BufPos += 4;
                 }
                 parent.before(...children);
             } else {
-                parent.before(inptr.nodes[inptr.decodeId()]);
-                inptr.u8BufPos += inptr.idSize;
+                parent.before(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
+                inptr.u8BufPos += 4;
             }
             break;
         // remove
         case 12:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
-                inptr.nodes[inptr.decodeId()].remove();
-                inptr.u8BufPos += inptr.idSize;
+                inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)].remove();
+                inptr.u8BufPos += 4;
             }
             else {
                 inptr.lastNode.remove();
@@ -162,8 +162,8 @@ function exOp() {
             inptr.u8BufPos += 2;
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
-                inptr.nodes[inptr.decodeId()] = inptr.lastNode;
-                inptr.u8BufPos += inptr.idSize;
+                inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)] = inptr.lastNode;
+                inptr.u8BufPos += 4;
             }
             break;
         // create element
@@ -180,16 +180,16 @@ function exOp() {
             }
             // the second bool is encoded as op & (1 << 6)
             if (op & 0x40) {
-                inptr.nodes[inptr.decodeId()] = inptr.lastNode;
-                inptr.u8BufPos += inptr.idSize;
+                inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)] = inptr.lastNode;
+                inptr.u8BufPos += 4;
             }
             break;
         // set text
         case 15:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
-                id = inptr.decodeId();
-                inptr.u8BufPos += inptr.idSize;
+                id = inptr.view.getUint32(inptr.u8BufPos, true);
+                inptr.u8BufPos += 4;
                 inptr.nodes[id].textContent = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true));
                 inptr.u8BufPos += 2;
             }
@@ -202,8 +202,8 @@ function exOp() {
         case 16:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
-                node = inptr.nodes[inptr.decodeId()];
-                inptr.u8BufPos += inptr.idSize;
+                node = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
+                inptr.u8BufPos += 4;
             }
             else {
                 node = inptr.lastNode;
@@ -223,8 +223,8 @@ function exOp() {
         case 17:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
-                node = inptr.nodes[inptr.decodeId()];
-                inptr.u8BufPos += inptr.idSize;
+                node = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
+                inptr.u8BufPos += 4;
             }
             else {
                 node = inptr.lastNode;
@@ -246,8 +246,8 @@ function exOp() {
         case 18:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
-                node = inptr.nodes[inptr.decodeId()];
-                inptr.u8BufPos += inptr.idSize;
+                node = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
+                inptr.u8BufPos += 4;
             }
             else {
                 node = inptr.lastNode;
@@ -264,8 +264,8 @@ function exOp() {
         case 19:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
-                node = inptr.nodes[inptr.decodeId()];
-                inptr.u8BufPos += inptr.idSize;
+                node = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
+                inptr.u8BufPos += 4;
             }
             else {
                 node = inptr.lastNode;
@@ -279,37 +279,37 @@ function exOp() {
         case 20:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
-                inptr.lastNode = inptr.nodes[inptr.decodeId()].cloneNode(true);
-                inptr.u8BufPos += inptr.idSize;
+                const id = inptr.view.getUint32(inptr.u8BufPos, true);
+                inptr.lastNode = inptr.nodes[id].cloneNode(true);
+                inptr.u8BufPos += 4;
             }
             else {
                 inptr.lastNode = inptr.lastNode.cloneNode(true);
             }
             // the second bool is encoded as op & (1 << 6)
             if (op & 0x40) {
-                inptr.nodes[inptr.decodeId()] = inptr.lastNode;
-                inptr.u8BufPos += inptr.idSize;
+                inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)] = inptr.lastNode;
+                inptr.u8BufPos += 4;
             }
             break;
         // clone node children
         case 21:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
-                node = inptr.nodes[inptr.decodeId()].cloneNode(true).firstChild;
-                inptr.u8BufPos += inptr.idSize;
+                node = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)].cloneNode(true).firstChild;
+                inptr.u8BufPos += 4;
             }
             else {
                 node = inptr.lastNode.cloneNode(true).firstChild;
             }
             for (; node !== null; node = node.nextSibling) {
                 if (inptr.view.getUint8(inptr.u8BufPos++) === 1) {
-                    inptr.nodes[inptr.decodeId()] = node;
-                    inptr.u8BufPos += inptr.idSize;
+                    inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)] = node;
+                    inptr.u8BufPos += 4;
                 }
             }
             break;
         default:
-            console.log("unknown op ", op & 0x1F);
             break;
     }
 }
@@ -441,30 +441,14 @@ export class JsInterpreter {
             return null;
         }
         else {
-            const id = this.decodeId();
-            this.u8BufPos += this.idSize;
+            const id = this.view.getUint32(this.u8BufPos, true);
+            this.u8BufPos += 4;
             return id;
         }
     }
 
     updateDecodeIdFn() {
-        switch (this.idSize) {
-            case 1:
-                this.decodeId = function () {
-                    return this.view.getUint8(this.u8BufPos);
-                };
-                break;
-            case 2:
-                this.decodeId = function () {
-                    return this.view.getUint16(this.u8BufPos, true);
-                };
-                break;
-            case 4:
-                this.decodeId = function () {
-                    return this.view.getUint32(this.u8BufPos, true);
-                };
-                break;
-        }
+
     }
 
     decodeU32() {

@@ -1,25 +1,25 @@
 use std::{fmt::Arguments, ops::RangeInclusive};
 
-use crate::{builder::VecLike, MsgChannel};
+use crate::MsgChannel;
 
 pub trait IntoValue {
     const LEN: RangeInclusive<Option<usize>>;
 
-    fn encode<V: VecLike>(self, v: &mut MsgChannel<V>);
+    fn encode(self, v: &mut MsgChannel);
 }
 
 impl IntoValue for bool {
     const LEN: RangeInclusive<Option<usize>> = RangeInclusive::new(Some(1), Some(1));
 
-    fn encode<V: VecLike>(self, v: &mut MsgChannel<V>) {
-        v.msg.add_element(if self { 255 } else { 0 });
+    fn encode(self, v: &mut MsgChannel) {
+        v.msg.push(if self { 255 } else { 0 });
     }
 }
 
 impl<S: AsRef<str>> IntoValue for &S {
     const LEN: RangeInclusive<Option<usize>> = RangeInclusive::new(Some(2), Some(256));
 
-    fn encode<V: VecLike>(self, v: &mut MsgChannel<V>) {
+    fn encode(self, v: &mut MsgChannel) {
         v.encode_str(format_args!("{}", self.as_ref()));
     }
 }
@@ -27,7 +27,7 @@ impl<S: AsRef<str>> IntoValue for &S {
 impl IntoValue for Arguments<'_> {
     const LEN: RangeInclusive<Option<usize>> = RangeInclusive::new(Some(2), Some(256));
 
-    fn encode<V: VecLike>(self, v: &mut MsgChannel<V>) {
+    fn encode(self, v: &mut MsgChannel) {
         v.encode_str(self);
     }
 }
