@@ -92,9 +92,9 @@ pub struct MsgChannel<V: VecLike + AsRef<[u8]> = Vec<u8>> {
     pub(crate) msg: V,
     pub(crate) str_buf: V,
     pub(crate) js_interpreter: JsInterpreter,
+    current_op_batch_idx: usize,
     current_op_byte_idx: usize,
     current_op_bit_pack_index: u8,
-    current_op_half_byte: bool,
 }
 
 impl<V: VecLike + AsRef<[u8]>> MsgChannel<V> {
@@ -121,9 +121,9 @@ impl<V: VecLike + AsRef<[u8]>> MsgChannel<V> {
             msg: v,
             str_buf: v2,
             js_interpreter,
-            current_op_byte_idx: 0,
+            current_op_byte_idx: 3,
             current_op_bit_pack_index: 0,
-            current_op_half_byte: false,
+            current_op_batch_idx: 0,
         }
     }
 }
@@ -234,42 +234,75 @@ impl<V: VecLike> MsgChannel<V> {
         }
     }
 
-    /// Replace a given (single) node with a number of nodes
-    pub fn replace_with(&mut self, root: MaybeId, nodes: Vec<NodeId>) {
+    /// Replace a node with another node
+    pub fn replace_with(&mut self, root: MaybeId, node: NodeId) {
+        let root = self.check_maybe_id(root);
+        let node = self.check_id(node);
+        self.encode_op(Op::ReplaceWith);
+        self.encode_maybe_id(root);
+        self.encode_bool(false);
+        self.encode_id(node);
+    }
+
+    /// Replace a node with a number of nodes
+    pub fn replace_with_nodes(&mut self, root: MaybeId, nodes: Vec<NodeId>) {
         let root = self.check_maybe_id(root);
         for child in &nodes {
             self.check_id(*child);
         }
         self.encode_op(Op::ReplaceWith);
         self.encode_maybe_id(root);
+        self.encode_bool(true);
         self.msg.extend_slice(&(nodes.len() as u32).to_le_bytes());
         for node in nodes {
             self.encode_id(node.to_le_bytes());
         }
     }
 
+    /// Insert a single node after a given node.
+    pub fn insert_after(&mut self, root: MaybeId, node: NodeId) {
+        let root = self.check_maybe_id(root);
+        let node = self.check_id(node);
+        self.encode_op(Op::InsertAfter);
+        self.encode_maybe_id(root);
+        self.encode_bool(false);
+        self.encode_id(node);
+    }
+
     /// Insert a number of nodes after a given node.
-    pub fn insert_after(&mut self, root: MaybeId, nodes: Vec<NodeId>) {
+    pub fn insert_nodes_after(&mut self, root: MaybeId, nodes: Vec<NodeId>) {
         let root = self.check_maybe_id(root);
         for child in &nodes {
             self.check_id(*child);
         }
         self.encode_op(Op::InsertAfter);
         self.encode_maybe_id(root);
+        self.encode_bool(true);
         self.msg.extend_slice(&(nodes.len() as u32).to_le_bytes());
         for node in nodes {
             self.encode_id(node.to_le_bytes());
         }
     }
 
-    /// Insert a number of nodes before a given node.
-    pub fn insert_before(&mut self, root: MaybeId, nodes: Vec<NodeId>) {
+    /// Insert a single node before a given node.
+    pub fn insert_before(&mut self, root: MaybeId, node: NodeId) {
         let root = self.check_maybe_id(root);
-        for child in &nodes {
-            self.check_id(*child);
+        let node = self.check_id(node);
+        self.encode_op(Op::InsertBefore);
+        self.encode_maybe_id(root);
+        self.encode_bool(false);
+        self.encode_id(node);
+    }
+
+    /// Insert a number of nodes before a given node.
+    pub fn insert_nodes_before(&mut self, root: MaybeId, nodes: Vec<NodeId>) {
+        let root = self.check_maybe_id(root);
+        for node in &nodes {
+            self.check_id(*node);
         }
         self.encode_op(Op::InsertBefore);
         self.encode_maybe_id(root);
+        self.encode_bool(true);
         self.msg.extend_slice(&(nodes.len() as u32).to_le_bytes());
         for node in nodes {
             self.encode_id(node.to_le_bytes());
@@ -475,28 +508,27 @@ impl<V: VecLike> MsgChannel<V> {
     #[inline]
     fn encode_op(&mut self, op: Op) {
         let u8_op = op as u8;
-        let half_byte = u8_op < Op::BuildFullElement as u8;
-        if self.current_op_half_byte && half_byte {
-            self.msg.modify(self.current_op_byte_idx, |op| {
-                let new = 1 | op | u8_op << 4;
-                new
-            });
-            self.current_op_half_byte = false;
-        } else {
-            self.current_op_byte_idx = self.msg.len();
-            self.msg.add_element(u8_op << 1);
 
-            self.current_op_bit_pack_index = 0;
-            self.current_op_half_byte = half_byte;
+        self.current_op_byte_idx += 1;
+        if self.current_op_byte_idx - self.current_op_batch_idx < 4 {
+            self.msg.set(self.current_op_byte_idx, u8_op);
+        } else {
+            self.current_op_batch_idx = self.msg.len();
+            self.current_op_byte_idx = self.current_op_batch_idx;
+            self.msg.add_element(u8_op);
+            self.msg.add_element(0);
+            self.msg.add_element(0);
+            self.msg.add_element(0);
         }
+        self.current_op_bit_pack_index = 0;
     }
 
     #[inline]
     pub(crate) fn encode_bool(&mut self, value: bool) {
-        if self.current_op_bit_pack_index < 2 {
+        if self.current_op_bit_pack_index < 3 {
             if value {
                 self.msg.modify(self.current_op_byte_idx, |op| {
-                    op | (1 << (self.current_op_bit_pack_index + 6))
+                    op | (1 << (self.current_op_bit_pack_index + 5))
                 });
             }
             self.current_op_bit_pack_index += 1;
@@ -537,10 +569,12 @@ impl<V: VecLike> MsgChannel<V> {
             }
         }
         if last_needs_memory() {
-            update_last_memory(wasm_bindgen::memory())
+            update_last_memory(wasm_bindgen::memory());
         }
         work_last_created();
         self.msg.clear();
+        self.current_op_batch_idx = 0;
+        self.current_op_byte_idx = 3;
         self.str_buf.clear();
     }
 

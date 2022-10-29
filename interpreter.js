@@ -1,272 +1,301 @@
+let op, len, ns, attr, i, value, element, ptr, pos, end, out, char, numAttributes, endRounded, inptr, op_batch;
+
 export function work_last_created() {
-    interpreter.Work();
+    inptr.Work();
 }
 
 export function last_needs_memory() {
-    return interpreter.view.buffer.byteLength === 0;
+    return !inptr.view.buffer.byteLength;
 }
 
 export function update_last_memory(mem) {
-    interpreter.UpdateMemory(mem);
+    inptr.UpdateMemory(mem);
 }
 
-let parent, len, children, node, ns, attr, op, i, name, value, element, ptr, metadata, pos, end, out, char, numAttributes, endRounded, interpreter;
+function exOp(inptr, op) {
+    let parent, len, children, node, ns, attr, i, name, value, id;
+    // first bool: op & 0x20
+    // second bool: op & 0x40
 
-// first bool: op & 0x40
-// second bool: op & 0x80
-const opLookup = [
     // first child
-    function () {
-        interpreter.lastNode = interpreter.lastNode.firstChild;
-    },
-    // next sibling
-    function () {
-        interpreter.lastNode = interpreter.lastNode.nextSibling;
-    },
-    // parent
-    function () {
-        interpreter.lastNode = interpreter.lastNode.parentNode;
-    },
-    // store with id
-    function () {
-        interpreter.nodes[interpreter.decodeId()] = interpreter.lastNode;
-    },
-    // set last node
-    function () {
-        interpreter.lastNode = interpreter.nodes[interpreter.decodeId()];
-    },
-    // set id size
-    function () {
-        interpreter.idSize = interpreter.view.getUint8(interpreter.u8BufPos++);
-        interpreter.updateDecodeIdFn();
-    },
-    // stop
-    function () {
-        return true;
-    },
-    // create full element
-    function () {
-        interpreter.createFullElement();
-    },
-    // append children
-    function () {
-        // the first bool is encoded as op & (1 << 6)
-        if (op & 0x40) {
-            parent = interpreter.nodes[interpreter.decodeId()];
-        }
-        else {
-            parent = interpreter.lastNode;
-        }
-        // the second bool is encoded as op & (1 << 7)
-        // second bool encodes if there are many children
-        if (op & 0x80) {
-            len = interpreter.decodeU32();
-            for (i = 0; i < len; i++) {
-                parent.appendChild(interpreter.nodes[interpreter.decodeId()]);
+    switch (op & 0x1F) {
+        case 0:
+            inptr.lastNode = inptr.lastNode.firstChild;
+            break;
+        // next sibling
+        case 1:
+            inptr.lastNode = inptr.lastNode.nextSibling;
+            break;
+        // parent
+        case 2:
+            inptr.lastNode = inptr.lastNode.parentNode;
+            break;
+        // store with id
+        case 3:
+            inptr.nodes[inptr.decodeId()] = inptr.lastNode;
+            inptr.u8BufPos += inptr.idSize;
+            break;
+        // set last node
+        case 4:
+            inptr.lastNode = inptr.nodes[inptr.decodeId()];
+            inptr.u8BufPos += inptr.idSize;
+            break;
+        // set id size
+        case 5:
+            inptr.idSize = inptr.view.getUint8(inptr.u8BufPos++);
+            inptr.updateDecodeIdFn();
+            break;
+        // stop
+        case 6:
+            return true;
+        // create full element
+        case 7:
+            inptr.createFullElement();
+            break;
+        // append children
+        case 8:
+            // the first bool is encoded as op & (1 << 5)
+            if (op & 0x20) {
+                parent = inptr.nodes[inptr.decodeId()];
+                inptr.u8BufPos += inptr.idSize;
             }
-        }
-        else {
-            const id = interpreter.decodeId();
-            parent.appendChild(interpreter.nodes[id]);
-        }
-    },
-    // replace with
-    function () {
-        // the first bool is encoded as op & (1 << 6)
-        if (op & 0x40) {
-            parent = interpreter.nodes[interpreter.decodeId()];
-        }
-        else {
-            parent = interpreter.lastNode;
-        }
-        len = interpreter.decodeU32();
-        if (len === 1) {
-            parent.replaceWith(interpreter.nodes[interpreter.decodeId()]);
-        }
-        else {
-            children = [];
-            for (i = 0; i < len; i++) {
-                children.push(interpreter.nodes[interpreter.decodeId()]);
+            else {
+                parent = inptr.lastNode;
             }
-            parent.replaceWith(...children);
-        }
-    },
-    // insert after
-    function () {
-        // the first bool is encoded as op & (1 << 6)
-        if (op & 0x40) {
-            parent = interpreter.nodes[interpreter.decodeId()];
-        }
-        else {
-            parent = interpreter.lastNode;
-        }
-        len = interpreter.decodeU32();
-        if (len === 1) {
-            parent.after(interpreter.nodes[interpreter.decodeId()]);
-        } else {
-            children = [];
-            for (i = 0; i < len; i++) {
-                children.push(interpreter.nodes[interpreter.decodeId()]);
+            // the second bool is encoded as op & (1 << 6)
+            // second bool encodes if there are many children
+            if (op & 0x40) {
+                len = inptr.decodeU32();
+                for (i = 0; i < len; i++) {
+                    parent.appendChild(inptr.nodes[inptr.decodeId()]);
+                    inptr.u8BufPos += inptr.idSize;
+                }
             }
-            parent.after(...children);
-        }
-    },
-    // insert before
-    function () {
-        // the first bool is encoded as op & (1 << 6)
-        if (op & 0x40) {
-            parent = interpreter.nodes[interpreter.decodeId()];
-        }
-        else {
-            parent = interpreter.lastNode;
-        }
-        len = interpreter.decodeU32();
-        if (len === 1) {
-            parent.before(interpreter.nodes[interpreter.decodeId()]);
-        } else {
-            children = [];
-            for (i = 0; i < len; i++) {
-                children.push(interpreter.nodes[interpreter.decodeId()]);
+            else {
+                parent.appendChild(inptr.nodes[inptr.decodeId()]);
+                inptr.u8BufPos += inptr.idSize;
             }
-            parent.before(...children);
-        }
-    },
-    // remove
-    function () {
-        // the first bool is encoded as op & (1 << 6)
-        if (op & 0x40) {
-            interpreter.nodes[interpreter.decodeId()].remove();
-        }
-        else {
-            interpreter.lastNode.remove();
-        }
-    },
-    // create text node
-    function () {
-        interpreter.lastNode = document.createTextNode(interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16()));
-        // the first bool is encoded as op & (1 << 6)
-        if (op & 0x40) {
-            interpreter.nodes[interpreter.decodeId()] = interpreter.lastNode;
-        }
-    },
-    // create element
-    function () {
-        name = interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16());
-        // the first bool is encoded as op & (1 << 6)
-        if (op & 0x40) {
-            interpreter.lastNode = document.createElementNS(name, interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16()));
-        }
-        else {
-            interpreter.lastNode = document.createElement(name);
-        }
-        // the second bool is encoded as op & (1 << 7)
-        if (op & 0x80) {
-            interpreter.nodes[interpreter.decodeId()] = interpreter.lastNode;
-        }
-    },
-    // set text
-    function () {
-        // the first bool is encoded as op & (1 << 6)
-        if (op & 0x40) {
-            interpreter.nodes[interpreter.decodeId()].textContent = interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16());;
-        }
-        else {
-            interpreter.lastNode.textContent = interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16());;
-        }
-    },
-    // set attribute
-    function () {
-        // the first bool is encoded as op & (1 << 6)
-        if (op & 0x40) {
-            node = interpreter.nodes[interpreter.decodeId()];
-        }
-        else {
-            node = interpreter.lastNode;
-        }
-        // the second bool is encoded as op & (1 << 7)
-        if (op & 0x80) {
-            node.setAttribute(interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16()), interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16()));
-        } else {
-            node.setAttribute(attrs[interpreter.view.getUint8(interpreter.u8BufPos++)], interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16()));
-        }
-    },
-    // set attribute ns
-    function () {
-        // the first bool is encoded as op & (1 << 6)
-        if (op & 0x40) {
-            node = interpreter.nodes[interpreter.decodeId()];
-        }
-        else {
-            node = interpreter.lastNode;
-        }
-        attr = interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16());
-        ns = interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16());
-        value = interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16());
-        if (ns === "style") {
-            // @ts-ignore
-            node.style[attr] = value;
-        } else if (ns != null || ns != undefined) {
-            node.setAttributeNS(ns, attr, value);
-        }
-    },
-    // remove attribute
-    function () {
-        // the first bool is encoded as op & (1 << 6)
-        if (op & 0x40) {
-            node = interpreter.nodes[interpreter.decodeId()];
-        }
-        else {
-            node = interpreter.lastNode;
-        }
-        // the second bool is encoded as op & (1 << 7)
-        if (op & 0x80) {
-            node.removeAttribute(interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16()));
-        } else {
-            node.removeAttribute(attrs[interpreter.view.getUint8(interpreter.u8BufPos++)]);
-        }
-    },
-    // remove attribute ns
-    function () {
-        // the first bool is encoded as op & (1 << 6)
-        if (op & 0x40) {
-            node = interpreter.nodes[interpreter.decodeId()];
-        }
-        else {
-            node = interpreter.lastNode;
-        }
-        attr = interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16());
-        node.removeAttributeNS(interpreter.strings.substring(interpreter.strPos, interpreter.strPos += interpreter.decodeU16()), attr);
-    },
-    // clone node
-    function () {
-        // the first bool is encoded as op & (1 << 6)
-        if (op & 0x40) {
-            interpreter.lastNode = interpreter.nodes[interpreter.decodeId()].cloneNode(true);
-        }
-        else {
-            interpreter.lastNode = interpreter.lastNode.cloneNode(true);
-        }
-        // the second bool is encoded as op & (1 << 7)
-        if (op & 0x80) {
-            interpreter.nodes[interpreter.decodeId()] = interpreter.lastNode;
-        }
-    },
-    // clone node children
-    function () {
-        // the first bool is encoded as op & (1 << 6)
-        if (op & 0x40) {
-            node = interpreter.nodes[interpreter.decodeId()].cloneNode(true).firstChild;
-        }
-        else {
-            node = interpreter.lastNode.cloneNode(true).firstChild;
-        }
-        for (; node !== null; node = node.nextSibling) {
-            if (interpreter.view.getUint8(interpreter.u8BufPos++) === 1) {
-                interpreter.nodes[interpreter.decodeId()] = node;
+            break;
+        // replace with
+        case 9:
+            // the first bool is encoded as op & (1 << 5)
+            if (op & 0x20) {
+                parent = inptr.nodes[inptr.decodeId()];
+                inptr.u8BufPos += inptr.idSize;
             }
-        }
-    },
-];
+            else {
+                parent = inptr.lastNode;
+            }
+            if (op & 0x40) {
+                len = inptr.decodeU32();
+                children = [];
+                for (i = 0; i < len; i++) {
+                    children.push(inptr.nodes[inptr.decodeId()]);
+                    inptr.u8BufPos += inptr.idSize;
+                }
+                parent.replaceWith(...children);
+            }
+            else {
+                parent.replaceWith(inptr.nodes[inptr.decodeId()]);
+                inptr.u8BufPos += inptr.idSize;
+            }
+            break;
+        // insert after
+        case 10:
+            // the first bool is encoded as op & (1 << 5)
+            if (op & 0x20) {
+                parent = inptr.nodes[inptr.decodeId()];
+                inptr.u8BufPos += inptr.idSize;
+            }
+            else {
+                parent = inptr.lastNode;
+            }
+            if (op & 0x40) {
+                len = inptr.decodeU32();
+                children = [];
+                for (i = 0; i < len; i++) {
+                    children.push(inptr.nodes[inptr.decodeId()]);
+                    inptr.u8BufPos += inptr.idSize;
+                }
+                parent.after(...children);
+            } else {
+                parent.after(inptr.nodes[inptr.decodeId()]);
+                inptr.u8BufPos += inptr.idSize;
+            }
+            break;
+        // insert before
+        case 11:
+            // the first bool is encoded as op & (1 << 5)
+            if (op & 0x20) {
+                parent = inptr.nodes[inptr.decodeId()];
+                inptr.u8BufPos += inptr.idSize;
+            }
+            else {
+                parent = inptr.lastNode;
+            }
+            if (op & 0x40) {
+                len = inptr.decodeU32();
+                children = [];
+                for (i = 0; i < len; i++) {
+                    children.push(inptr.nodes[inptr.decodeId()]);
+                    inptr.u8BufPos += inptr.idSize;
+                }
+                parent.before(...children);
+            } else {
+                parent.before(inptr.nodes[inptr.decodeId()]);
+                inptr.u8BufPos += inptr.idSize;
+            }
+            break;
+        // remove
+        case 12:
+            // the first bool is encoded as op & (1 << 5)
+            if (op & 0x20) {
+                inptr.nodes[inptr.decodeId()].remove();
+                inptr.u8BufPos += inptr.idSize;
+            }
+            else {
+                inptr.lastNode.remove();
+            }
+            break;
+        // create text node
+        case 13:
+            inptr.lastNode = document.createTextNode(inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.decodeU16()));
+            // the first bool is encoded as op & (1 << 5)
+            if (op & 0x20) {
+                inptr.nodes[inptr.decodeId()] = inptr.lastNode;
+                inptr.u8BufPos += inptr.idSize;
+            }
+            break;
+        // create element
+        case 14:
+            name = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.decodeU16());
+            // the first bool is encoded as op & (1 << 5)
+            if (op & 0x20) {
+                inptr.lastNode = document.createElementNS(name, inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.decodeU16()));
+            }
+            else {
+                inptr.lastNode = document.createElement(name);
+            }
+            // the second bool is encoded as op & (1 << 6)
+            if (op & 0x40) {
+                inptr.nodes[inptr.decodeId()] = inptr.lastNode;
+                inptr.u8BufPos += inptr.idSize;
+            }
+            break;
+        // set text
+        case 15:
+            // the first bool is encoded as op & (1 << 5)
+            if (op & 0x20) {
+                id = inptr.decodeId();
+                inptr.u8BufPos += inptr.idSize;
+                inptr.nodes[id].textContent = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.decodeU16());;
+            }
+            else {
+                inptr.lastNode.textContent = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.decodeU16());;
+            }
+            break;
+        // set attribute
+        case 16:
+            // the first bool is encoded as op & (1 << 5)
+            if (op & 0x20) {
+                node = inptr.nodes[inptr.decodeId()];
+                inptr.u8BufPos += inptr.idSize;
+            }
+            else {
+                node = inptr.lastNode;
+            }
+            // the second bool is encoded as op & (1 << 6)
+            if (op & 0x40) {
+                node.setAttribute(inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.decodeU16()), inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.decodeU16()));
+            } else {
+                node.setAttribute(attrs[inptr.view.getUint8(inptr.u8BufPos++)], inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.decodeU16()));
+            }
+            break;
+        // set attribute ns
+        case 17:
+            // the first bool is encoded as op & (1 << 5)
+            if (op & 0x20) {
+                node = inptr.nodes[inptr.decodeId()];
+                inptr.u8BufPos += inptr.idSize;
+            }
+            else {
+                node = inptr.lastNode;
+            }
+            attr = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.decodeU16());
+            ns = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.decodeU16());
+            value = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.decodeU16());
+            if (ns === "style") {
+                // @ts-ignore
+                node.style[attr] = value;
+            } else if (ns != null || ns != undefined) {
+                node.setAttributeNS(ns, attr, value);
+            }
+            break;
+        // remove attribute
+        case 18:
+            // the first bool is encoded as op & (1 << 5)
+            if (op & 0x20) {
+                node = inptr.nodes[inptr.decodeId()];
+                inptr.u8BufPos += inptr.idSize;
+            }
+            else {
+                node = inptr.lastNode;
+            }
+            // the second bool is encoded as op & (1 << 6)
+            if (op & 0x40) {
+                node.removeAttribute(inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.decodeU16()));
+            } else {
+                node.removeAttribute(attrs[inptr.view.getUint8(inptr.u8BufPos++)]);
+            }
+            break;
+        // remove attribute ns
+        case 19:
+            // the first bool is encoded as op & (1 << 5)
+            if (op & 0x20) {
+                node = inptr.nodes[inptr.decodeId()];
+                inptr.u8BufPos += inptr.idSize;
+            }
+            else {
+                node = inptr.lastNode;
+            }
+            attr = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.decodeU16());
+            node.removeAttributeNS(inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.decodeU16()), attr);
+            break;
+        // clone node
+        case 20:
+            // the first bool is encoded as op & (1 << 5)
+            if (op & 0x20) {
+                inptr.lastNode = inptr.nodes[inptr.decodeId()].cloneNode(true);
+                inptr.u8BufPos += inptr.idSize;
+            }
+            else {
+                inptr.lastNode = inptr.lastNode.cloneNode(true);
+            }
+            // the second bool is encoded as op & (1 << 6)
+            if (op & 0x40) {
+                inptr.nodes[inptr.decodeId()] = inptr.lastNode;
+                inptr.u8BufPos += inptr.idSize;
+            }
+            break;
+        // clone node children
+        case 21:
+            // the first bool is encoded as op & (1 << 5)
+            if (op & 0x20) {
+                node = inptr.nodes[inptr.decodeId()].cloneNode(true).firstChild;
+                inptr.u8BufPos += inptr.idSize;
+            }
+            else {
+                node = inptr.lastNode.cloneNode(true).firstChild;
+            }
+            for (; node !== null; node = node.nextSibling) {
+                if (inptr.view.getUint8(inptr.u8BufPos++) === 1) {
+                    inptr.nodes[inptr.decodeId()] = node;
+                    inptr.u8BufPos += inptr.idSize;
+                }
+            }
+            break;
+    }
+}
 
 export class JsInterpreter {
     constructor(root, mem, _metadata_ptr, _ptr_ptr, _str_ptr_ptr, _str_len_ptr) {
@@ -284,7 +313,7 @@ export class JsInterpreter {
         this.strings = "";
         this.strPos = 0;
         this.decoder = new TextDecoder();
-        interpreter = this;
+        inptr = this;
         this.updateDecodeIdFn();
     }
 
@@ -293,11 +322,12 @@ export class JsInterpreter {
     }
 
     UpdateMemory(mem) {
-        this.view = new DataView(mem.buffer);
+        if (this.view.buffer.byteLength === 0)
+            this.view = new DataView(mem.buffer);
     }
 
     Work() {
-        metadata = this.view.getUint8(this.metadata_ptr);
+        const metadata = this.view.getUint8(this.metadata_ptr);
         if (metadata & 0x01) {
             this.last_start_pos = this.view.getUint32(this.ptr_ptr, true);
         }
@@ -323,16 +353,14 @@ export class JsInterpreter {
 
         // this is faster than a while(true) loop
         for (; ;) {
-            op = this.view.getUint8(this.u8BufPos++);
-            if (op & 1) {
-                // first half byte
-                opLookup[(op & 0x0E) >> 1]();
-                // second half byte
-                if (opLookup[op >> 4]()) return;
-            }
-            else {
-                if (opLookup[(op & 0x3E) >> 1]()) return;
-            }
+            // op = this.view.getUint8(this.u8BufPos++);
+            // if (this.exOp(op & 0x1F)) return;
+            op_batch = this.view.getUint32(this.u8BufPos, true);
+            this.u8BufPos += 4;
+            if (exOp(this, op = op_batch & 0xFF)) return;
+            if (exOp(this, op = (op_batch >>>= 8) & 0xFF)) return;
+            if (exOp(this, op = (op_batch >>>= 8) & 0xFF)) return;
+            if (exOp(this, op = (op_batch >>>= 8) & 0xFF)) return;
         }
     }
 
@@ -383,7 +411,9 @@ export class JsInterpreter {
             return null;
         }
         else {
-            return this.decodeId();
+            const id = this.decodeId();
+            this.u8BufPos += this.idSize;
+            return id;
         }
     }
 
@@ -391,19 +421,17 @@ export class JsInterpreter {
         switch (this.idSize) {
             case 1:
                 this.decodeId = function () {
-                    return this.view.getUint8(this.u8BufPos++);
+                    return this.view.getUint8(this.u8BufPos);
                 };
                 break;
             case 2:
                 this.decodeId = function () {
-                    this.u8BufPos += 2;
-                    return this.view.getUint16(this.u8BufPos - 2, true);
+                    return this.view.getUint16(this.u8BufPos, true);
                 };
                 break;
             case 4:
                 this.decodeId = function () {
-                    this.u8BufPos += 4;
-                    return this.view.getUint32(this.u8BufPos - 4, true);
+                    return this.view.getUint32(this.u8BufPos, true);
                 };
                 break;
         }
