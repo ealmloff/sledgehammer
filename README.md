@@ -22,9 +22,15 @@
 ### Status: There are cracks in the wall.
 
 # What is Sledgehammer?
-Sledgehammer provides faster rust bindings for dom manipuations by batching calls to js. On the js-framework benchmarks it results in about half of the overhead of wasm-bindgen.
+Sledgehammer provides faster rust bindings for dom manipuations by batching calls to js.
 
-# A few runs of the js-framework-benchmark (seems to be quite a bit of variation)
+# Benchmarks
+
+- js-framework-benchmark that trust the implementation and only measures operation time (not paint time):
+https://demonthos.github.io/wasm_bindgen_sledgehammer/
+This gives more consistant results than the official js-framework-benchmark because it excludes the variation in paint time. Because sledgehammer and wasm-bindgen implementations result in the same dom calls they should have the same paint time.
+
+- A few runs of the js-framework-benchmark (seems to be quite a bit of variation)
 ![image](https://user-images.githubusercontent.com/66571940/197082775-e720b258-0691-47e3-acdc-d5c15c7cceab.png)
 ![image](https://user-images.githubusercontent.com/66571940/197093432-0df1aa04-ef3b-40f2-b829-fedca9f307ea.png)
 ![image](https://user-images.githubusercontent.com/66571940/197096143-ed517c1e-a526-491b-9595-b0c629943ed1.png)
