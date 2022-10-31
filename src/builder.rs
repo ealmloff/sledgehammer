@@ -85,56 +85,53 @@ enum Op {
     /// Manually set the last node.
     SetLastNode = 4,
 
-    /// Set id size
-    SetIdSize = 5,
-
     /// Stop
-    Stop = 6,
+    Stop = 5,
 
     /// Build Full Element
-    BuildFullElement = 7,
+    BuildFullElement = 6,
 
     /// Pop the topmost node from our stack and append them to the node
-    AppendChildren = 8,
+    AppendChildren = 7,
 
     /// Replace a given (single) node with a handful of nodes currently on the stack.
-    ReplaceWith = 9,
+    ReplaceWith = 8,
 
     /// Insert a number of nodes after a given node.
-    InsertAfter = 10,
+    InsertAfter = 9,
 
     /// Insert a number of nodes before a given node.
-    InsertBefore = 11,
+    InsertBefore = 10,
 
     /// Remove a particular node from the DOM
-    Remove = 12,
+    Remove = 11,
 
     /// Create a new text node
-    CreateTextNode = 13,
+    CreateTextNode = 12,
 
     /// Create a new element node
-    CreateElement = 14,
+    CreateElement = 13,
 
     /// Set the textcontent of a node.
-    SetText = 15,
+    SetText = 14,
 
     /// Set the value of a node's attribute.
-    SetAttribute = 16,
+    SetAttribute = 15,
 
     /// Set the value of a node's attribute.
-    SetAttributeNs = 17,
+    SetAttributeNs = 16,
 
     /// Remove an attribute from a node.
-    RemoveAttribute = 18,
+    RemoveAttribute = 17,
 
     /// Remove an attribute from a node.
-    RemoveAttributeNs = 19,
+    RemoveAttributeNs = 18,
 
     /// Clones a node.
-    CloneNode = 20,
+    CloneNode = 19,
 
     /// Clones the children of a node. (allows cloning fragments)
-    CloneNodeChildren = 21,
+    CloneNodeChildren = 20,
 }
 
 impl MsgChannel {

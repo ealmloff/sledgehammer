@@ -39,20 +39,15 @@ function exOp() {
             inptr.lastNode = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
             inptr.u8BufPos += 4;
             break;
-        // set id size
-        case 5:
-            inptr.idSize = inptr.view.getUint8(inptr.u8BufPos++);
-            inptr.updateDecodeIdFn();
-            break;
         // stop
-        case 6:
+        case 5:
             return true;
         // create full element
-        case 7:
+        case 6:
             inptr.createFullElement();
             break;
         // append children
-        case 8:
+        case 7:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
                 parent = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
@@ -76,7 +71,7 @@ function exOp() {
             }
             break;
         // replace with
-        case 9:
+        case 8:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
                 parent = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
@@ -100,7 +95,7 @@ function exOp() {
             }
             break;
         // insert after
-        case 10:
+        case 9:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
                 parent = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
@@ -123,7 +118,7 @@ function exOp() {
             }
             break;
         // insert before
-        case 11:
+        case 10:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
                 parent = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
@@ -146,7 +141,7 @@ function exOp() {
             }
             break;
         // remove
-        case 12:
+        case 11:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
                 inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)].remove();
@@ -157,7 +152,7 @@ function exOp() {
             }
             break;
         // create text node
-        case 13:
+        case 12:
             inptr.lastNode = document.createTextNode(inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true)));
             inptr.u8BufPos += 2;
             // the first bool is encoded as op & (1 << 5)
@@ -167,7 +162,7 @@ function exOp() {
             }
             break;
         // create element
-        case 14:
+        case 13:
             name = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true));
             inptr.u8BufPos += 2;
             // the first bool is encoded as op & (1 << 5)
@@ -185,7 +180,7 @@ function exOp() {
             }
             break;
         // set text
-        case 15:
+        case 14:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
                 id = inptr.view.getUint32(inptr.u8BufPos, true);
@@ -199,7 +194,7 @@ function exOp() {
             }
             break;
         // set attribute
-        case 16:
+        case 15:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
                 node = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
@@ -220,7 +215,7 @@ function exOp() {
             }
             break;
         // set attribute ns
-        case 17:
+        case 16:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
                 node = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
@@ -243,7 +238,7 @@ function exOp() {
             }
             break;
         // remove attribute
-        case 18:
+        case 17:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
                 node = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
@@ -261,7 +256,7 @@ function exOp() {
             }
             break;
         // remove attribute ns
-        case 19:
+        case 18:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
                 node = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
@@ -276,7 +271,7 @@ function exOp() {
             inptr.u8BufPos += 2;
             break;
         // clone node
-        case 20:
+        case 19:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
                 const id = inptr.view.getUint32(inptr.u8BufPos, true);
@@ -293,7 +288,7 @@ function exOp() {
             }
             break;
         // clone node children
-        case 21:
+        case 20:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
                 node = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)].cloneNode(true).firstChild;
@@ -330,7 +325,6 @@ export class JsInterpreter {
         this.strPos = 0;
         this.decoder = new TextDecoder();
         this.idSize = 1;
-        this.updateDecodeIdFn();
         inptr = this;
     }
 
@@ -445,10 +439,6 @@ export class JsInterpreter {
             this.u8BufPos += 4;
             return id;
         }
-    }
-
-    updateDecodeIdFn() {
-
     }
 
     decodeU32() {
