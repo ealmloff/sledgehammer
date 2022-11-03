@@ -7,8 +7,19 @@ use crate::{
     builder::{MaybeId, MsgChannel},
 };
 
+use self::sealed::Sealed;
+
+mod sealed {
+    use crate::Element;
+
+    pub trait Sealed {}
+
+    impl Sealed for Element {}
+    impl<S: AsRef<str>> Sealed for S {}
+}
+
 /// Anything that can be turned into an element name
-pub trait IntoElement {
+pub trait IntoElement: Sealed {
     const LEN: RangeInclusive<Option<usize>>;
 
     fn size(&self) -> usize;
@@ -42,7 +53,7 @@ impl<S: AsRef<str>> IntoElement for S {
 
 /// Something that can be turned into a list of elements
 #[allow(clippy::len_without_is_empty)]
-pub trait ManyElements {
+pub trait ManyElements: sealed_many_elements::Sealed {
     fn len(&self) -> usize;
     fn encode(self, v: &mut MsgChannel);
 }
@@ -58,83 +69,103 @@ impl ManyElements for () {
 }
 
 macro_rules! impl_many_elements {
-    (( $( ($t:ident, $i:ident) ),+ )$l:literal) => {
-        impl< $($t),+ > ManyElements for ($($t,)+)
-            where $($t: ElementBuilderExt),+ {
-            fn len(&self) -> usize {
-                $l
-            }
+    (
+        $(
+            ( $( ($t:ident, $i:ident) ),+ )$l:literal
+        )+
+    ) => {
+        mod sealed_many_elements {
+            use super::*;
 
-            fn encode(self, v: &mut MsgChannel) {
-                v.msg.push(self.len() as u8);
-                let ($($i,)+) = self;
-                $($i.encode(v);)+
-            }
+            pub trait Sealed {}
+
+            impl Sealed for () {}
+            $(
+                impl< $($t),+ > Sealed for ($($t,)+)
+                    where $($t: ElementBuilderExt),+ {
+
+                }
+            )+
         }
+        $(
+            impl< $($t),+ > ManyElements for ($($t,)+)
+                where $($t: ElementBuilderExt),+ {
+                fn len(&self) -> usize {
+                    $l
+                }
+
+                fn encode(self, v: &mut MsgChannel) {
+                    v.msg.push(self.len() as u8);
+                    let ($($i,)+) = self;
+                    $($i.encode(v);)+
+                }
+            }
+        )+
     };
 }
 
-impl_many_elements!(((T1, t1))1);
-impl_many_elements!(((T1, t1), (T2, t2))2);
-impl_many_elements!(((T1, t1), (T2, t2), (T3, t3))3);
-impl_many_elements!(((T1, t1), (T2, t2), (T3, t3), (T4, t4))4);
-impl_many_elements!(((T1, t1), (T2, t2), (T3, t3), (T4, t4), (T5, t5))5);
-impl_many_elements!(((T1, t1), (T2, t2), (T3, t3), (T4, t4), (T5, t5), (T6, t6))6);
-impl_many_elements!((
-    (T1, t1),
-    (T2, t2),
-    (T3, t3),
-    (T4, t4),
-    (T5, t5),
-    (T6, t6),
-    (T7, t7)
-)7);
-impl_many_elements!((
-    (T1, t1),
-    (T2, t2),
-    (T3, t3),
-    (T4, t4),
-    (T5, t5),
-    (T6, t6),
-    (T7, t7),
-    (T8, t8)
-)8);
-impl_many_elements!((
-    (T1, t1),
-    (T2, t2),
-    (T3, t3),
-    (T4, t4),
-    (T5, t5),
-    (T6, t6),
-    (T7, t7),
-    (T8, t8),
-    (T9, t9)
-)9);
-impl_many_elements!((
-    (T1, t1),
-    (T2, t2),
-    (T3, t3),
-    (T4, t4),
-    (T5, t5),
-    (T6, t6),
-    (T7, t7),
-    (T8, t8),
-    (T9, t9),
-    (T10, t10)
-)10);
-impl_many_elements!((
-    (T1, t1),
-    (T2, t2),
-    (T3, t3),
-    (T4, t4),
-    (T5, t5),
-    (T6, t6),
-    (T7, t7),
-    (T8, t8),
-    (T9, t9),
-    (T10, t10),
-    (T11, t11)
-)11);
+impl_many_elements!(((T1, t1))1
+    ((T1, t1), (T2, t2))2
+    ((T1, t1), (T2, t2), (T3, t3))3
+    ((T1, t1), (T2, t2), (T3, t3), (T4, t4))4
+    ((T1, t1), (T2, t2), (T3, t3), (T4, t4), (T5, t5))5
+    ((T1, t1), (T2, t2), (T3, t3), (T4, t4), (T5, t5), (T6, t6))6
+    (
+        (T1, t1),
+        (T2, t2),
+        (T3, t3),
+        (T4, t4),
+        (T5, t5),
+        (T6, t6),
+        (T7, t7)
+    )7
+    (
+        (T1, t1),
+        (T2, t2),
+        (T3, t3),
+        (T4, t4),
+        (T5, t5),
+        (T6, t6),
+        (T7, t7),
+        (T8, t8)
+    )8
+    (
+        (T1, t1),
+        (T2, t2),
+        (T3, t3),
+        (T4, t4),
+        (T5, t5),
+        (T6, t6),
+        (T7, t7),
+        (T8, t8),
+        (T9, t9)
+    )9
+    (
+        (T1, t1),
+        (T2, t2),
+        (T3, t3),
+        (T4, t4),
+        (T5, t5),
+        (T6, t6),
+        (T7, t7),
+        (T8, t8),
+        (T9, t9),
+        (T10, t10)
+    )10
+    (
+        (T1, t1),
+        (T2, t2),
+        (T3, t3),
+        (T4, t4),
+        (T5, t5),
+        (T6, t6),
+        (T7, t7),
+        (T8, t8),
+        (T9, t9),
+        (T10, t10),
+        (T11, t11)
+    )11
+);
 
 /// A builder for a element with an id, kind, attributes, and children
 pub struct ElementBuilder<K: IntoElement, A: ManyAttrs, E: ManyElements> {
@@ -156,8 +187,16 @@ impl<K: IntoElement, A: ManyAttrs, E: ManyElements> ElementBuilder<K, A, E> {
 }
 
 /// Extra functions for element builders
-pub trait ElementBuilderExt {
+pub trait ElementBuilderExt: sealed_element_builder::Sealed {
     fn encode(self, v: &mut MsgChannel);
+}
+
+mod sealed_element_builder {
+    use super::*;
+
+    pub trait Sealed {}
+
+    impl<K: IntoElement, A: ManyAttrs, E: ManyElements> Sealed for ElementBuilder<K, A, E> {}
 }
 
 impl<K: IntoElement, A: ManyAttrs, E: ManyElements> ElementBuilderExt for ElementBuilder<K, A, E> {

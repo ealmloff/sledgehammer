@@ -2,8 +2,10 @@ use std::ops::RangeInclusive;
 
 use crate::{builder::WritableText, MsgChannel};
 
+use self::sealed::Sealed;
+
 /// Anything that can be turned into a value
-pub trait IntoValue {
+pub trait IntoValue: Sealed {
     const LEN: RangeInclusive<Option<usize>>;
 
     fn encode(self, v: &mut MsgChannel);
@@ -18,4 +20,12 @@ where
     fn encode(self, v: &mut MsgChannel) {
         v.encode_str(self);
     }
+}
+
+mod sealed {
+    use crate::builder::WritableText;
+
+    pub trait Sealed {}
+
+    impl<W: WritableText> Sealed for W {}
 }

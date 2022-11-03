@@ -3,8 +3,19 @@
 use crate::value::IntoValue;
 use crate::MsgChannel;
 
+use self::sealed::Sealed;
+
+mod sealed {
+    use crate::Attribute;
+
+    pub trait Sealed {}
+
+    impl Sealed for Attribute {}
+    impl<S: AsRef<str>> Sealed for S {}
+}
+
 /// Anything that can be turned into an attribute
-pub trait IntoAttribue {
+pub trait IntoAttribue: Sealed {
     /// If the attribute has a namespace
     const HAS_NS: bool;
     /// Encode the attribute into the message channel
@@ -38,7 +49,7 @@ impl<S: AsRef<str>> IntoAttribue for S {
 
 /// Something that can be turned into a list of attributes and values
 #[allow(clippy::len_without_is_empty)]
-pub trait ManyAttrs {
+pub trait ManyAttrs: sealed_many_attrs::Sealed {
     /// The number of attribute value pairs
     fn len(&self) -> usize;
     /// Encode the attributes into the message channel
@@ -56,51 +67,61 @@ impl ManyAttrs for () {
 }
 
 macro_rules! impl_many_attrs {
-    ( $( (($t:ident, $i:ident):($v:ident, $m:ident)) ,)+:$l:literal ) => {
-        impl< $($t, $v),+ > ManyAttrs for ($(($t, $v),)+)
-        where $($t: IntoAttribue, $v: IntoValue),+ {
-            fn len(&self) -> usize {
-                $l
-            }
+    (
+        $(
+            $( (($t:ident, $i:ident):($v:ident, $m:ident)) ,)+:$l:literal
+        )+
+    ) => {
+        mod sealed_many_attrs {
+            use super::*;
 
-            fn encode(self, v: &mut MsgChannel) {
-                v.msg.push(self.len() as u8);
-                let ($(($i, $m),)+) = self;
-                $($i.encode_u8_discriminant(v);$m.encode(v);)+
-            }
+            pub trait Sealed {}
+
+            impl Sealed for () {}
+            $(
+                impl< $($t, $v),+ > Sealed for ($(($t, $v),)+)
+                    where $($t: IntoAttribue, $v: IntoValue),+ {
+
+                }
+            )+
         }
+        $(
+            impl< $($t, $v),+ > ManyAttrs for ($(($t, $v),)+)
+                where $($t: IntoAttribue, $v: IntoValue),+ {
+                fn len(&self) -> usize {
+                    $l
+                }
+
+                fn encode(self, v: &mut MsgChannel) {
+                    v.msg.push(self.len() as u8);
+                    let ($(($i, $m),)+) = self;
+                    $($i.encode_u8_discriminant(v);$m.encode(v);)+
+                }
+            }
+        )+
     };
 }
 
-impl_many_attrs!(((T1, t1): (A1, a1)),:1);
-impl_many_attrs!(((T1, t1): (A1, a1)), ((T2, t2): (A2, a2)),:2);
-impl_many_attrs!(
+impl_many_attrs!(((T1, t1): (A1, a1)),:1
+((T1, t1): (A1, a1)), ((T2, t2): (A2, a2)),:2
     ((T1, t1): (A1, a1)),
     ((T2, t2): (A2, a2)),
     ((T3, t3): (A3, a3)),:3
-);
-impl_many_attrs!(
     ((T1, t1): (A1, a1)),
     ((T2, t2): (A2, a2)),
     ((T3, t3): (A3, a3)),
     ((T4, t4): (A4, a4)),:4
-);
-impl_many_attrs!(
     ((T1, t1): (A1, a1)),
     ((T2, t2): (A2, a2)),
     ((T3, t3): (A3, a3)),
     ((T4, t4): (A4, a4)),
     ((T5, t5): (A5, a5)),:5
-);
-impl_many_attrs!(
     ((T1, t1): (A1, a1)),
     ((T2, t2): (A2, a2)),
     ((T3, t3): (A3, a3)),
     ((T4, t4): (A4, a4)),
     ((T5, t5): (A5, a5)),
     ((T6, t6): (A6, a6)),:6
-);
-impl_many_attrs!(
     ((T1, t1): (A1, a1)),
     ((T2, t2): (A2, a2)),
     ((T3, t3): (A3, a3)),
@@ -108,8 +129,6 @@ impl_many_attrs!(
     ((T5, t5): (A5, a5)),
     ((T6, t6): (A6, a6)),
     ((T7, t7): (A7, a7)),:7
-);
-impl_many_attrs!(
     ((T1, t1): (A1, a1)),
     ((T2, t2): (A2, a2)),
     ((T3, t3): (A3, a3)),
@@ -118,8 +137,6 @@ impl_many_attrs!(
     ((T6, t6): (A6, a6)),
     ((T7, t7): (A7, a7)),
     ((T8, t8): (A8, a8)),:8
-);
-impl_many_attrs!(
     ((T1, t1): (A1, a1)),
     ((T2, t2): (A2, a2)),
     ((T3, t3): (A3, a3)),
@@ -129,8 +146,6 @@ impl_many_attrs!(
     ((T7, t7): (A7, a7)),
     ((T8, t8): (A8, a8)),
     ((T9, t9): (A9, a9)),:9
-);
-impl_many_attrs!(
     ((T1, t1): (A1, a1)),
     ((T2, t2): (A2, a2)),
     ((T3, t3): (A3, a3)),
@@ -141,8 +156,6 @@ impl_many_attrs!(
     ((T8, t8): (A8, a8)),
     ((T9, t9): (A9, a9)),
     ((T10, t10): (A10, a10)),:10
-);
-impl_many_attrs!(
     ((T1, t1): (A1, a1)),
     ((T2, t2): (A2, a2)),
     ((T3, t3): (A3, a3)),
