@@ -43,7 +43,7 @@
 //!# How does this compare to wasm-bindgen/web-sys:
 //!wasm-bindgen is a lot more general, and ergonomic to use than sledgehammer. It has bindings to a lot of apis that sledgehammer does not. For most users wasm-bindgen is a beter choice. Sledgehammer is specifically designed for web frameworks that want low level, fast access to the dom.
 //!
-//!# Why is it fast
+//!# Why is it fast?
 //!
 //!## String decoding
 //!
@@ -51,7 +51,7 @@
 //!
 //!- If the string is small it is faster to decode the string in javascript to avoid the constant overhead of TextDecoder.decode
 //!
-//!- See this benchmark: https://jsbench.me/4vl97c05lb/5
+//!- See this benchmark: <https://jsbench.me/4vl97c05lb/5>
 //!
 //!## Single byte attributes and elements
 //!
@@ -67,12 +67,11 @@
 //!
 //!- Each operation is encoded in a batch of four as a u32. Getting a number from an array buffer has a high constant cost, but getting a u32 instead of a u8 is not more expensive. Sledgehammer reads the u32 and then splits it into the 4 individual bytes.
 //!
-//!- See this benchmark: https://jsbench.me/csl9lfauwi/2
+//!- See this benchmark: <https://jsbench.me/csl9lfauwi/2>
 //!
 //!## Minimize passing ids
 //!
 //!- A common set of operations for webframeworks to perform is traversing dom nodes after cloning them. Instead of assigning an id to every node, sledgehammer allows you to perform operations on the last node that was created or navigated to. This means traversing id takes only one byte per operation instead of 5.
-//!
 
 #![allow(non_camel_case_types)]
 

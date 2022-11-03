@@ -40,7 +40,7 @@ This gives more consistant results than the official js-framework-benchmark beca
 # How does this compare to wasm-bindgen/web-sys:
 wasm-bindgen is a lot more general, and ergonomic to use than sledgehammer. It has bindings to a lot of apis that sledgehammer does not. For most users wasm-bindgen is a beter choice. Sledgehammer is specifically designed for web frameworks that want low level, fast access to the dom.
 
-# Why is it fast
+# Why is it fast?
 
 ## String decoding
 
