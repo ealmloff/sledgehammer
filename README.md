@@ -1,4 +1,7 @@
 <div align="center">
+  <h1>sledgehammer</h1>
+</div>
+<div align="center">
   <!-- Crates version -->
   <a href="https://crates.io/crates/sledgehammer">
     <img src="https://img.shields.io/crates/v/sledgehammer.svg?style=flat-square"
@@ -15,8 +18,6 @@
       alt="docs.rs docs" />
   </a>
 </div>
-
-# sledgehammer
 
 **Breaking the WASM<->JS peformance boundry one brick at a time**
 ### Status: There are some holes in the wall.
