@@ -33,7 +33,8 @@ pub struct MsgChannel {
 }
 
 impl MsgChannel {
-    pub fn with(v: Vec<u8>, v2: Vec<u8>, el: Element) -> Self {
+    /// Create a MsgChannel with the specified Vecs and root element
+    fn with(v: Vec<u8>, v2: Vec<u8>, el: Element) -> Self {
         assert!(0x1F > Op::CloneNodeChildren as u8);
         format!(
             "init: {:?}, {:?}, {:?}",

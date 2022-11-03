@@ -10,7 +10,9 @@ macro_rules! builder_constructors {
             }
          )*
     ) => {
-        enum Attribute {
+        /// All built-in attributes
+        #[allow(non_cammel_case)]
+        pub enum Attribute {
             $(
                 $(
                     $(#[$attr_method])*

@@ -2,6 +2,7 @@ use std::ops::RangeInclusive;
 
 use crate::{MsgChannel, Writable};
 
+/// Anything that can be turned into a value
 pub trait IntoValue {
     const LEN: RangeInclusive<Option<usize>>;
 

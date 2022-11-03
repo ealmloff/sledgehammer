@@ -50,6 +50,12 @@ wasm-bindgen is a lot more general, and ergonomic to use than sledgehammer. It h
 
 - See this benchmark: https://jsbench.me/4vl97c05lb/5
 
+## Single byte attributes and elements
+
+- In addition to making string decoding cheaper, sledehammer also uses less strings. All elements and attribute names are encoded as a single byte instead of a string and then turned back into a string in the javascipt intepreter.
+
+- To allow for custom elements and attributes, you can pass in a &str instead of a Attribute or Element enum.
+
 ## Byte encoded operations
 
 - In sledehammer every operation is encoded as a sequence of bytes packed into an array. Every operation takes 1 byte plus whatever data is required for it.

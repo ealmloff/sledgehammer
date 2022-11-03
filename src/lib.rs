@@ -1,11 +1,10 @@
 #![allow(non_camel_case_types)]
 
 // mod attrs;
-pub mod attribute;
 pub mod builder;
 pub mod element;
-pub mod event;
 pub mod value;
+pub mod attrs;
 
 pub use attribute::*;
 pub use builder::*;
@@ -46,7 +45,6 @@ extern "C" {
 
     #[wasm_bindgen(constructor)]
     pub(crate) fn new(
-        arg: Element,
         mem: JsValue,
         msg_pos_updated_ptr: usize,
         msg_ptr: usize,
