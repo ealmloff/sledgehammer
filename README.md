@@ -33,7 +33,6 @@ This gives more consistant results than the official js-framework-benchmark beca
 - A few runs of a fork of the js-framework-benchmark: https://github.com/demonthos/js-framework-benchmark/tree/testing
 ![Screenshot 2022-11-03 113041](https://user-images.githubusercontent.com/66571940/199780394-a360581f-1496-4894-b7fe-3d5b5d627dbb.png)
 ![Screenshot 2022-11-03 105742](https://user-images.githubusercontent.com/66571940/199780395-d7d00059-052e-40b7-9514-aba55800dc04.png)
-![Screenshot 2022-11-03 091301](https://user-images.githubusercontent.com/66571940/199780396-26a6ea4c-9d48-43b5-b173-5546c0c74ec0.png)
 ![Screenshot 2022-11-03 085548](https://user-images.githubusercontent.com/66571940/199780398-0060a62b-4d93-4a40-94a2-980835393aa2.png)
 
 # How does this compare to wasm-bindgen/web-sys:
