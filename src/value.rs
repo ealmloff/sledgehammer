@@ -1,7 +1,8 @@
 use std::ops::RangeInclusive;
 
-use crate::{MsgChannel, Writable};
+use crate::{builder::WritableText, MsgChannel};
 
+/// Anything that can be turned into a value
 pub trait IntoValue {
     const LEN: RangeInclusive<Option<usize>>;
 
@@ -10,7 +11,7 @@ pub trait IntoValue {
 
 impl<W> IntoValue for W
 where
-    W: Writable,
+    W: WritableText,
 {
     const LEN: RangeInclusive<Option<usize>> = RangeInclusive::new(Some(2), Some(256));
 

@@ -3,9 +3,13 @@
 use crate::value::IntoValue;
 use crate::MsgChannel;
 
+/// Anything that can be turned into an attribute
 pub trait IntoAttribue {
+    /// If the attribute has a namespace
     const HAS_NS: bool;
+    /// Encode the attribute into the message channel
     fn encode(self, v: &mut MsgChannel);
+    /// Encode the attribute into the message channel with a u8 desciminant instead of bit packed bools
     fn encode_u8_discriminant(self, v: &mut MsgChannel);
 }
 
@@ -32,9 +36,12 @@ impl<S: AsRef<str>> IntoAttribue for S {
     }
 }
 
+/// Something that can be turned into a list of attributes and values
 #[allow(clippy::len_without_is_empty)]
 pub trait ManyAttrs {
+    /// The number of attribute value pairs
     fn len(&self) -> usize;
+    /// Encode the attributes into the message channel
     fn encode(self, v: &mut MsgChannel);
 }
 

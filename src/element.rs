@@ -2,8 +2,12 @@
 
 use std::ops::RangeInclusive;
 
-use crate::{attribute::ManyAttrs, builder::MsgChannel, MaybeId};
+use crate::{
+    attribute::ManyAttrs,
+    builder::{MaybeId, MsgChannel},
+};
 
+/// Anything that can be turned into an element name
 pub trait IntoElement {
     const LEN: RangeInclusive<Option<usize>>;
 
@@ -36,6 +40,7 @@ impl<S: AsRef<str>> IntoElement for S {
     }
 }
 
+/// Something that can be turned into a list of elements
 #[allow(clippy::len_without_is_empty)]
 pub trait ManyElements {
     fn len(&self) -> usize;
@@ -131,6 +136,7 @@ impl_many_elements!((
     (T11, t11)
 )11);
 
+/// A builder for a element with an id, kind, attributes, and children
 pub struct ElementBuilder<K: IntoElement, A: ManyAttrs, E: ManyElements> {
     id: MaybeId,
     kind: K,
@@ -149,6 +155,7 @@ impl<K: IntoElement, A: ManyAttrs, E: ManyElements> ElementBuilder<K, A, E> {
     }
 }
 
+/// Extra functions for element builders
 pub trait ElementBuilderExt {
     fn encode(self, v: &mut MsgChannel);
 }
@@ -162,6 +169,7 @@ impl<K: IntoElement, A: ManyAttrs, E: ManyElements> ElementBuilderExt for Elemen
     }
 }
 
+/// All built-in elements
 #[allow(unused)]
 pub enum Element {
     a,
