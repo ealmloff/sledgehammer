@@ -1,7 +1,7 @@
 use std::{convert::Infallible, fmt::Arguments, io::Write};
 
 use ufmt::{uWrite, uwrite};
-use web_sys::{Element, Node};
+use web_sys::Node;
 
 use crate::{
     last_needs_memory, update_last_memory, work_last_created, ElementBuilderExt, IntoAttribue,
@@ -34,7 +34,7 @@ pub struct MsgChannel {
 
 impl MsgChannel {
     /// Create a MsgChannel with the specified Vecs and root element
-    fn with(v: Vec<u8>, v2: Vec<u8>, el: Element) -> Self {
+    fn with(v: Vec<u8>, v2: Vec<u8>) -> Self {
         assert!(0x1F > Op::CloneNodeChildren as u8);
         format!(
             "init: {:?}, {:?}, {:?}",
@@ -44,7 +44,6 @@ impl MsgChannel {
         );
         let js_interpreter = unsafe {
             JsInterpreter::new(
-                el,
                 wasm_bindgen::memory(),
                 MSG_METADATA_PTR as usize,
                 MSG_PTR_PTR as usize,
@@ -64,9 +63,9 @@ impl MsgChannel {
     }
 }
 
-impl MsgChannel {
-    pub fn new(el: Element) -> Self {
-        Self::with(Vec::new(), Vec::new(), el)
+impl Default for MsgChannel {
+    fn default() -> Self {
+        Self::with(Vec::new(), Vec::new())
     }
 }
 

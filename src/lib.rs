@@ -1,10 +1,10 @@
 #![allow(non_camel_case_types)]
 
 // mod attrs;
+pub mod attribute;
 pub mod builder;
 pub mod element;
 pub mod value;
-pub mod attrs;
 
 pub use attribute::*;
 pub use builder::*;
@@ -12,8 +12,6 @@ pub use element::*;
 
 use wasm_bindgen::prelude::*;
 use web_sys::Node;
-
-use web_sys::Element;
 
 #[used]
 static mut MSG_PTR: usize = 0;
