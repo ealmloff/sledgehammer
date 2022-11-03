@@ -33,8 +33,8 @@ static mut STR_LEN: usize = 0;
 #[used]
 static mut STR_LEN_PTR: *const usize = unsafe { &STR_LEN } as *const usize;
 
-#[wasm_bindgen(module = "/interpreter_opt.js")]
-// #[wasm_bindgen(module = "/interpreter.js")]
+// #[wasm_bindgen(module = "/interpreter_opt.js")]
+#[wasm_bindgen(module = "/interpreter.js")]
 extern "C" {
     fn work_last_created();
 

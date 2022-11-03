@@ -1,4 +1,4 @@
-let op, len, ns, attr, i, value, element, ptr, pos, end, out, char, numAttributes, endRounded, inptr, op_batch, buffer, metadata, parent, children, node, name, id, nodes;
+let op, len, ns, attr, i, value, element, ptr, pos, end, out, char, numAttributes, endRounded, inptr, buffer, metadata, parent, children, node, name, id, nodes;
 
 export function work_last_created() {
     inptr.Work();
@@ -366,15 +366,14 @@ export class JsInterpreter {
         for (; ;) {
             // op = this.view.getUint8(this.u8BufPos++);
             // if (this.exOp(op & 0x1F)) return;
-            op_batch = this.view.getUint32(this.u8BufPos, true);
+            op = this.view.getUint32(this.u8BufPos, true);
             this.u8BufPos += 4;
-            op = op_batch & 0xFF;
             if (exOp()) return;
-            op = (op_batch >>>= 8) & 0xFF;
+            op >>>= 8;
             if (exOp()) return;
-            op = (op_batch >>>= 8) & 0xFF;
+            op >>>= 8;
             if (exOp()) return;
-            op = (op_batch >>>= 8) & 0xFF;
+            op >>>= 8;
             if (exOp()) return;
         }
     }

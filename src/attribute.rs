@@ -24,11 +24,11 @@ impl<S: AsRef<str>> IntoAttribue for S {
     const HAS_NS: bool = false;
     fn encode(self, v: &mut MsgChannel) {
         v.encode_bool(true);
-        v.encode_cachable_str(format_args!("{}", self.as_ref()));
+        v.encode_cachable_str(self.as_ref());
     }
     fn encode_u8_discriminant(self, v: &mut MsgChannel) {
         v.msg.push(255);
-        v.encode_cachable_str(format_args!("{}", self.as_ref()));
+        v.encode_cachable_str(self.as_ref());
     }
 }
 

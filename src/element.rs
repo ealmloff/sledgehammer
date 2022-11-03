@@ -32,7 +32,7 @@ impl<S: AsRef<str>> IntoElement for S {
 
     fn encode(self, v: &mut MsgChannel) {
         v.msg.push(255);
-        v.encode_str(format_args!("{}", self.as_ref()));
+        v.encode_str(self.as_ref());
     }
 }
 
