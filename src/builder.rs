@@ -4,8 +4,8 @@ use ufmt::{uWrite, uwrite};
 use web_sys::Node;
 
 use crate::{
-    last_needs_memory, update_last_memory, work_last_created, ElementBuilderExt, IntoAttribue,
-    JsInterpreter, MSG_METADATA_PTR, MSG_PTR_PTR, STR_LEN_PTR, STR_PTR_PTR,
+    element::ElementBuilderExt, last_needs_memory, update_last_memory, work_last_created,
+    IntoAttribue, JsInterpreter, MSG_METADATA_PTR, MSG_PTR_PTR, STR_LEN_PTR, STR_PTR_PTR,
 };
 
 /// An id that may be either the last node or a node with an assigned id.
@@ -18,11 +18,12 @@ pub enum MaybeId {
 }
 
 /// A node that was created and stored with an id
+/// It is recommended to create and store ids with a slab allocator with an exposed slab index for example the excellent [slab](https://docs.rs/slab) crate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeId(pub u32);
 
-/// A channel to send batched messages to the interpreter.
-/// IMPORTANT: All of the functions that are not marked otherwise are qued and not exicuted imidately. When you want to exicute the que you have to call `flush`.
+/// The [`MsgChannel`] handles communication with the dom. It allows you to send batched operations to the dom.
+/// All of the functions that are not marked otherwise are qued and not exicuted imidately. When you want to exicute the que you have to call [`MsgChannel::flush`].
 pub struct MsgChannel {
     pub(crate) msg: Vec<u8>,
     pub(crate) str_buf: Vec<u8>,
@@ -219,14 +220,19 @@ impl MsgChannel {
     }
 
     /// Create a new text node
-    pub fn create_text_node(&mut self, text: impl Writable, id: MaybeId) {
+    pub fn create_text_node(&mut self, text: impl WritableText, id: MaybeId) {
         self.encode_op(Op::CreateTextNode);
         self.encode_str(text);
         self.encode_maybe_id(id);
     }
 
     /// Create a new element node
-    pub fn create_element(&mut self, tag: impl Writable, ns: Option<impl Writable>, id: MaybeId) {
+    pub fn create_element(
+        &mut self,
+        tag: impl WritableText,
+        ns: Option<impl WritableText>,
+        id: MaybeId,
+    ) {
         self.encode_op(Op::CreateElement);
         self.encode_cachable_str(tag);
         if let Some(ns) = ns {
@@ -239,14 +245,19 @@ impl MsgChannel {
     }
 
     /// Set the textcontent of a node.
-    pub fn set_text(&mut self, text: impl Writable, root: MaybeId) {
+    pub fn set_text(&mut self, text: impl WritableText, root: MaybeId) {
         self.encode_op(Op::SetText);
         self.encode_maybe_id(root);
         self.encode_str(text);
     }
 
     /// Set the value of a node's attribute.
-    pub fn set_attribute<A: IntoAttribue>(&mut self, attr: A, value: impl Writable, root: MaybeId) {
+    pub fn set_attribute<A: IntoAttribue>(
+        &mut self,
+        attr: A,
+        value: impl WritableText,
+        root: MaybeId,
+    ) {
         if A::HAS_NS {
             self.encode_op(Op::SetAttributeNs);
         } else {
@@ -373,16 +384,16 @@ impl MsgChannel {
     }
 
     #[inline]
-    pub(crate) fn encode_str(&mut self, string: impl Writable) {
+    pub(crate) fn encode_str(&mut self, string: impl WritableText) {
         let prev_len = self.str_buf.len();
-        string.write(&mut self.str_buf);
+        string.write_as_text(&mut self.str_buf);
         let len = self.str_buf.len() - prev_len;
         self.encode_u16(len as u16);
     }
 
-    pub(crate) fn encode_cachable_str(&mut self, string: impl Writable) {
+    pub(crate) fn encode_cachable_str(&mut self, string: impl WritableText) {
         let prev_len = self.str_buf.len();
-        string.write(&mut self.str_buf);
+        string.write_as_text(&mut self.str_buf);
         let len = self.str_buf.len() - prev_len;
         self.encode_u16(len as u16);
     }
@@ -421,7 +432,7 @@ impl MsgChannel {
         }
     }
 
-    /// Exicutes any queued operations
+    /// Exicutes any queued operations in the order they were added
     #[inline]
     pub fn flush(&mut self) {
         debug_assert_eq!(0usize.to_le_bytes().len(), 32 / 8);
@@ -462,33 +473,35 @@ impl MsgChannel {
         self.str_buf.clear();
     }
 
-    /// IMPORTANT: Unlike other methods this method is exicuted imediately and does not wait for the next flush
+    /// IMPORTANT: Unlike other methods this method is exicuted immediatly and does not wait for the next flush
     pub fn set_node(&mut self, id: NodeId, node: Node) {
         self.js_interpreter.SetNode(id.0, node);
     }
 
-    /// IMPORTANT: Unlike other methods this method is exicuted imediately and does not wait for the next flush
+    /// IMPORTANT: Unlike other methods this method is exicuted immediatly and does not wait for the next flush
     pub fn get_node(&mut self, id: NodeId) -> Node {
         self.js_interpreter.GetNode(id.0)
     }
 }
 
-pub trait Writable {
-    fn write(self, to: &mut Vec<u8>);
+/// Something that can be written as a utf-8 string to a buffer
+pub trait WritableText {
+    fn write_as_text(self, to: &mut Vec<u8>);
 }
 
-impl<'a> Writable for &'a str {
-    fn write(self, to: &mut Vec<u8>) {
+impl<'a> WritableText for &'a str {
+    fn write_as_text(self, to: &mut Vec<u8>) {
         to.extend_from_slice(self.as_bytes());
     }
 }
 
-impl Writable for Arguments<'_> {
-    fn write(self, to: &mut Vec<u8>) {
+impl WritableText for Arguments<'_> {
+    fn write_as_text(self, to: &mut Vec<u8>) {
         let _ = to.write_fmt(self);
     }
 }
 
+/// A wrapper around a `Vec<u8>` that can implement `Writable`
 pub struct WritableVecWrapper<'a>(&'a mut Vec<u8>);
 
 impl uWrite for WritableVecWrapper<'_> {
@@ -500,81 +513,81 @@ impl uWrite for WritableVecWrapper<'_> {
     }
 }
 
-impl Writable for u8 {
-    fn write(self, to: &mut Vec<u8>) {
+impl WritableText for u8 {
+    fn write_as_text(self, to: &mut Vec<u8>) {
         let mut v = WritableVecWrapper(to);
         let _ = uwrite!(v, "{}", self);
     }
 }
 
-impl Writable for u16 {
-    fn write(self, to: &mut Vec<u8>) {
+impl WritableText for u16 {
+    fn write_as_text(self, to: &mut Vec<u8>) {
         let mut v = WritableVecWrapper(to);
         let _ = uwrite!(v, "{}", self);
     }
 }
 
-impl Writable for u32 {
-    fn write(self, to: &mut Vec<u8>) {
+impl WritableText for u32 {
+    fn write_as_text(self, to: &mut Vec<u8>) {
         let mut v = WritableVecWrapper(to);
         let _ = uwrite!(v, "{}", self);
     }
 }
 
-impl Writable for u64 {
-    fn write(self, to: &mut Vec<u8>) {
+impl WritableText for u64 {
+    fn write_as_text(self, to: &mut Vec<u8>) {
         let mut v = WritableVecWrapper(to);
         let _ = uwrite!(v, "{}", self);
     }
 }
 
-impl Writable for usize {
-    fn write(self, to: &mut Vec<u8>) {
+impl WritableText for usize {
+    fn write_as_text(self, to: &mut Vec<u8>) {
         let mut v = WritableVecWrapper(to);
         let _ = uwrite!(v, "{}", self);
     }
 }
 
-impl Writable for i8 {
-    fn write(self, to: &mut Vec<u8>) {
+impl WritableText for i8 {
+    fn write_as_text(self, to: &mut Vec<u8>) {
         let mut v = WritableVecWrapper(to);
         let _ = uwrite!(v, "{}", self);
     }
 }
 
-impl Writable for i16 {
-    fn write(self, to: &mut Vec<u8>) {
+impl WritableText for i16 {
+    fn write_as_text(self, to: &mut Vec<u8>) {
         let mut v = WritableVecWrapper(to);
         let _ = uwrite!(v, "{}", self);
     }
 }
 
-impl Writable for i32 {
-    fn write(self, to: &mut Vec<u8>) {
+impl WritableText for i32 {
+    fn write_as_text(self, to: &mut Vec<u8>) {
         let mut v = WritableVecWrapper(to);
         let _ = uwrite!(v, "{}", self);
     }
 }
 
-impl Writable for i64 {
-    fn write(self, to: &mut Vec<u8>) {
+impl WritableText for i64 {
+    fn write_as_text(self, to: &mut Vec<u8>) {
         let mut v = WritableVecWrapper(to);
         let _ = uwrite!(v, "{}", self);
     }
 }
 
-impl Writable for isize {
-    fn write(self, to: &mut Vec<u8>) {
+impl WritableText for isize {
+    fn write_as_text(self, to: &mut Vec<u8>) {
         let mut v = WritableVecWrapper(to);
         let _ = uwrite!(v, "{}", self);
     }
 }
 
-impl<F> Writable for F
+impl<F> WritableText for F
 where
     F: FnOnce(WritableVecWrapper),
 {
-    fn write(self, to: &mut Vec<u8>) {
+    fn write_as_text(self, to: &mut Vec<u8>) {
         self(WritableVecWrapper(to));
     }
 }

@@ -2,7 +2,10 @@
 
 use std::ops::RangeInclusive;
 
-use crate::{attribute::ManyAttrs, builder::MsgChannel, MaybeId};
+use crate::{
+    attribute::ManyAttrs,
+    builder::{MaybeId, MsgChannel},
+};
 
 /// Anything that can be turned into an element name
 pub trait IntoElement {
