@@ -122,7 +122,11 @@ enum Op {
     SetAttribute = 15,
 
     /// Remove an attribute from a node.
-    RemoveAttribute = 17,
+    RemoveAttribute = 16,
+
+    SetStyle = 17,
+
+    RemoveStyle = 18,
 
     /// Clones a node.
     CloneNode = 19,
@@ -302,6 +306,21 @@ impl MsgChannel {
     pub fn build_full_element(&mut self, el: impl ElementBuilderExt) {
         self.encode_op(Op::BuildFullElement);
         el.encode(self);
+    }
+
+    /// Set a style property on a node.
+    pub fn set_style(&mut self, style: &str, value: &str, id: MaybeId) {
+        self.encode_op(Op::SetStyle);
+        self.encode_maybe_id(id);
+        self.encode_str(style);
+        self.encode_str(value);
+    }
+
+    /// Remove a style property from a node.
+    pub fn remove_style(&mut self, style: &str, id: MaybeId) {
+        self.encode_op(Op::RemoveStyle);
+        self.encode_maybe_id(id);
+        self.encode_str(style);
     }
 
     #[inline]

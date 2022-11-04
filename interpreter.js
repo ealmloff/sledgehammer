@@ -225,7 +225,7 @@ function exOp() {
             }
             break;
         // remove attribute
-        case 17:
+        case 16:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
                 node = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
@@ -260,7 +260,20 @@ function exOp() {
                 }
             }
             break;
-        // remove attribute ns
+        // set style
+        case 17:
+            // the first bool is encoded as op & (1 << 5)
+            if (op & 0x20) {
+                node = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
+                inptr.u8BufPos += 4;
+            }
+            else {
+                node = inptr.lastNode;
+            }
+            node.style.setProperty(inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true)), inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos + 2, true)));
+            inptr.u8BufPos += 4;
+            break;
+        // remove style
         case 18:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
@@ -270,9 +283,7 @@ function exOp() {
             else {
                 node = inptr.lastNode;
             }
-            attr = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true));
-            inptr.u8BufPos += 2;
-            node.removeAttributeNS(inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true)), attr);
+            node.style.removeProperty(inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true)));
             inptr.u8BufPos += 2;
             break;
         // clone node
