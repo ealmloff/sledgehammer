@@ -1,6 +1,6 @@
 #![allow(non_camel_case_types)]
 
-use crate::{attribute::AnyAttribute, builder::MsgChannel, InNamespace, NodeId};
+use crate::{attribute::AnyAttribute, batch::Batch, InNamespace, NodeId};
 
 use self::sealed::Sealed;
 
@@ -23,7 +23,7 @@ pub enum AnyElement<'a, 'b> {
 }
 
 impl AnyElement<'_, '_> {
-    pub fn encode(&self, v: &mut MsgChannel) {
+    pub fn encode(&self, v: &mut Batch) {
         match self {
             AnyElement::Element(a) => a.encode(v),
             AnyElement::InNamespace(a) => a.encode(v),
@@ -35,7 +35,7 @@ impl AnyElement<'_, '_> {
 
 /// Anything that can be turned into an element name
 pub trait IntoElement<'a, 'b>: Sealed {
-    fn encode(&self, v: &mut MsgChannel);
+    fn encode(&self, v: &mut Batch);
 
     fn any_element(self) -> AnyElement<'a, 'b>;
 }
@@ -47,7 +47,7 @@ impl<'a, 'b> Element {
 }
 
 impl<'a, 'b> IntoElement<'a, 'b> for Element {
-    fn encode(&self, v: &mut MsgChannel) {
+    fn encode(&self, v: &mut Batch) {
         v.msg.push(*self as u8);
     }
 
@@ -63,7 +63,7 @@ impl<'a, 'b> InNamespace<'a, Element> {
 }
 
 impl<'a, 'b> IntoElement<'a, 'b> for InNamespace<'a, Element> {
-    fn encode(&self, v: &mut MsgChannel) {
+    fn encode(&self, v: &mut Batch) {
         v.msg.push(255);
         v.msg.push(self.0 as u8);
         v.encode_str(self.1);
@@ -75,7 +75,7 @@ impl<'a, 'b> IntoElement<'a, 'b> for InNamespace<'a, Element> {
 }
 
 impl<'a, 'b> IntoElement<'a, 'b> for &'a str {
-    fn encode(&self, v: &mut MsgChannel) {
+    fn encode(&self, v: &mut Batch) {
         v.msg.push(254);
         v.encode_str(*self);
     }
@@ -86,7 +86,7 @@ impl<'a, 'b> IntoElement<'a, 'b> for &'a str {
 }
 
 impl<'a, 'b> IntoElement<'a, 'b> for InNamespace<'a, &'b str> {
-    fn encode(&self, v: &mut MsgChannel) {
+    fn encode(&self, v: &mut Batch) {
         v.msg.push(253);
         v.encode_str(self.0);
         v.encode_str(self.1);
@@ -136,7 +136,7 @@ impl<'a> ElementBuilder<'a> {
         self
     }
 
-    pub(crate) fn encode(&self, v: &mut MsgChannel) {
+    pub(crate) fn encode(&self, v: &mut Batch) {
         v.encode_optional_id_with_byte_bool(self.id);
         self.kind.encode(v);
         v.msg.push(self.attrs.len() as u8);

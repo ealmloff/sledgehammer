@@ -1,7 +1,7 @@
 #![allow(non_camel_case_types)]
 
 use self::sealed::Sealed;
-use crate::{InNamespace, MsgChannel};
+use crate::{batch::Batch, InNamespace};
 
 mod sealed {
     use crate::{Attribute, InNamespace};
@@ -22,7 +22,7 @@ pub enum AnyAttribute<'a, 'b> {
 }
 
 impl AnyAttribute<'_, '_> {
-    pub fn encode_u8_discriminant(&self, v: &mut MsgChannel) {
+    pub fn encode_u8_discriminant(&self, v: &mut Batch) {
         match self {
             AnyAttribute::Attribute(a) => a.encode_u8_discriminant(v),
             AnyAttribute::InNamespace(a) => a.encode_u8_discriminant(v),
@@ -35,9 +35,9 @@ impl AnyAttribute<'_, '_> {
 /// Anything that can be turned into an attribute
 pub trait IntoAttribue<'a, 'b>: Sealed {
     /// Encode the attribute into the message channel
-    fn encode(self, v: &mut MsgChannel);
+    fn encode(self, v: &mut Batch);
     /// Encode the attribute into the message channel with a u8 desciminant instead of bit packed bools
-    fn encode_u8_discriminant(&self, v: &mut MsgChannel);
+    fn encode_u8_discriminant(&self, v: &mut Batch);
     /// Turn into an [`AnyAttribute`]
     fn any_attr(self) -> AnyAttribute<'a, 'b>;
 }
@@ -49,13 +49,13 @@ impl<'a, 'b> Attribute {
 }
 
 impl<'a, 'b> IntoAttribue<'a, 'b> for Attribute {
-    fn encode(self, v: &mut MsgChannel) {
+    fn encode(self, v: &mut Batch) {
         v.encode_bool(false);
         v.msg.push(self as u8);
         v.encode_bool(false);
     }
 
-    fn encode_u8_discriminant(&self, v: &mut MsgChannel) {
+    fn encode_u8_discriminant(&self, v: &mut Batch) {
         v.msg.push(*self as u8)
     }
 
@@ -71,14 +71,14 @@ impl<'a, 'b> InNamespace<'a, Attribute> {
 }
 
 impl<'a, 'b> IntoAttribue<'a, 'b> for InNamespace<'a, Attribute> {
-    fn encode(self, v: &mut MsgChannel) {
+    fn encode(self, v: &mut Batch) {
         v.encode_bool(false);
         v.msg.push(self.0 as u8);
         v.encode_bool(true);
         v.encode_str(self.1);
     }
 
-    fn encode_u8_discriminant(&self, v: &mut MsgChannel) {
+    fn encode_u8_discriminant(&self, v: &mut Batch) {
         v.msg.push(255);
         v.msg.push(self.0 as u8);
         v.encode_str(self.1);
@@ -90,13 +90,13 @@ impl<'a, 'b> IntoAttribue<'a, 'b> for InNamespace<'a, Attribute> {
 }
 
 impl<'a, 'b> IntoAttribue<'a, 'b> for &'a str {
-    fn encode(self, v: &mut MsgChannel) {
+    fn encode(self, v: &mut Batch) {
         v.encode_bool(true);
         v.encode_cachable_str(self);
         v.encode_bool(false);
     }
 
-    fn encode_u8_discriminant(&self, v: &mut MsgChannel) {
+    fn encode_u8_discriminant(&self, v: &mut Batch) {
         v.msg.push(254);
         v.encode_cachable_str(*self);
     }
@@ -113,14 +113,14 @@ impl<'a, 'b> InNamespace<'a, &'b str> {
 }
 
 impl<'a, 'b> IntoAttribue<'a, 'b> for InNamespace<'a, &'b str> {
-    fn encode(self, v: &mut MsgChannel) {
+    fn encode(self, v: &mut Batch) {
         v.encode_bool(true);
         v.encode_cachable_str(self.0);
         v.encode_bool(true);
         v.encode_cachable_str(self.1);
     }
 
-    fn encode_u8_discriminant(&self, v: &mut MsgChannel) {
+    fn encode_u8_discriminant(&self, v: &mut Batch) {
         v.msg.push(253);
         v.encode_cachable_str(self.0);
         v.encode_cachable_str(self.1);
