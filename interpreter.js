@@ -44,7 +44,7 @@ function exOp() {
             return true;
         // create full element
         case 6:
-            inptr.createFullElement();
+            this.lastNode = inptr.createFullElement();
             break;
         // append children
         case 7:

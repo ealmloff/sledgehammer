@@ -291,7 +291,7 @@ impl MsgChannel {
         self.encode_op(Op::CloneNodeChildren);
         self.encode_maybe_id(id);
         for id in new_ids {
-            self.encode_maybe_id_with_byte_bool(MaybeId::Node(id));
+            self.encode_optional_id_with_byte_bool(Some(NodeId(id)));
         }
     }
 
@@ -329,6 +329,19 @@ impl MsgChannel {
     }
 
     #[inline]
+    pub(crate) fn encode_optional_id(&mut self, id: Option<NodeId>) {
+        match id {
+            Some(id) => {
+                self.encode_bool(true);
+                self.encode_id(id);
+            }
+            None => {
+                self.encode_bool(false);
+            }
+        }
+    }
+
+    #[inline]
     pub(crate) fn encode_maybe_id(&mut self, id: MaybeId) {
         match id {
             MaybeId::Node(id) => {
@@ -342,13 +355,13 @@ impl MsgChannel {
     }
 
     #[inline]
-    pub(crate) fn encode_maybe_id_with_byte_bool(&mut self, id: MaybeId) {
+    pub(crate) fn encode_optional_id_with_byte_bool(&mut self, id: Option<NodeId>) {
         match id {
-            MaybeId::Node(id) => {
+            Some(id) => {
                 self.msg.push(1);
                 self.encode_id(id);
             }
-            MaybeId::LastNode => {
+            None => {
                 self.msg.push(0);
             }
         }

@@ -5,6 +5,7 @@ use std::ops::RangeInclusive;
 use crate::{
     attribute::ManyAttrs,
     builder::{MaybeId, MsgChannel},
+    NodeId,
 };
 
 use self::sealed::Sealed;
@@ -169,14 +170,14 @@ impl_many_elements!(((T1, t1))1
 
 /// A builder for a element with an id, kind, attributes, and children
 pub struct ElementBuilder<K: IntoElement, A: ManyAttrs, E: ManyElements> {
-    id: MaybeId,
+    id: Option<NodeId>,
     kind: K,
     attrs: A,
     children: E,
 }
 
 impl<K: IntoElement, A: ManyAttrs, E: ManyElements> ElementBuilder<K, A, E> {
-    pub const fn new(id: MaybeId, kind: K, attrs: A, children: E) -> Self {
+    pub const fn new(id: Option<NodeId>, kind: K, attrs: A, children: E) -> Self {
         Self {
             id,
             kind,
@@ -201,7 +202,7 @@ mod sealed_element_builder {
 
 impl<K: IntoElement, A: ManyAttrs, E: ManyElements> ElementBuilderExt for ElementBuilder<K, A, E> {
     fn encode(self, v: &mut MsgChannel) {
-        v.encode_maybe_id_with_byte_bool(self.id);
+        v.encode_optional_id_with_byte_bool(self.id);
         self.kind.encode(v);
         self.attrs.encode(v);
         self.children.encode(v);
