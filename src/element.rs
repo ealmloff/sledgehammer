@@ -40,6 +40,12 @@ pub trait IntoElement<'a, 'b>: Sealed {
     fn any_element(self) -> AnyElement<'a, 'b>;
 }
 
+impl<'a, 'b> Element {
+    pub const fn any_element_const(self) -> AnyElement<'a, 'b> {
+        AnyElement::Element(self)
+    }
+}
+
 impl<'a, 'b> IntoElement<'a, 'b> for Element {
     fn encode(&self, v: &mut MsgChannel) {
         v.msg.push(*self as u8);
@@ -47,6 +53,12 @@ impl<'a, 'b> IntoElement<'a, 'b> for Element {
 
     fn any_element(self) -> AnyElement<'a, 'b> {
         AnyElement::Element(self)
+    }
+}
+
+impl<'a, 'b> InNamespace<'a, Element> {
+    pub const fn any_element_const(self) -> AnyElement<'a, 'b> {
+        AnyElement::InNamespace(self)
     }
 }
 
@@ -81,6 +93,12 @@ impl<'a, 'b> IntoElement<'a, 'b> for InNamespace<'a, &'b str> {
     }
 
     fn any_element(self) -> AnyElement<'a, 'b> {
+        AnyElement::InNamespaceStr(self)
+    }
+}
+
+impl<'a, 'b> InNamespace<'a, &'b str> {
+    pub const fn any_element_const(self) -> AnyElement<'a, 'b> {
         AnyElement::InNamespaceStr(self)
     }
 }

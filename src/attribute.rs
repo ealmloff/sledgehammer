@@ -42,6 +42,12 @@ pub trait IntoAttribue<'a, 'b>: Sealed {
     fn any_attr(self) -> AnyAttribute<'a, 'b>;
 }
 
+impl<'a, 'b> Attribute {
+    pub const fn any_attr_const(self) -> AnyAttribute<'a, 'b> {
+        AnyAttribute::Attribute(self)
+    }
+}
+
 impl<'a, 'b> IntoAttribue<'a, 'b> for Attribute {
     fn encode(self, v: &mut MsgChannel) {
         v.encode_bool(false);
@@ -55,6 +61,12 @@ impl<'a, 'b> IntoAttribue<'a, 'b> for Attribute {
 
     fn any_attr(self) -> AnyAttribute<'a, 'b> {
         AnyAttribute::Attribute(self)
+    }
+}
+
+impl<'a, 'b> InNamespace<'a, Attribute> {
+    pub const fn any_attr_const(self) -> AnyAttribute<'a, 'b> {
+        AnyAttribute::InNamespace(self)
     }
 }
 
@@ -91,6 +103,12 @@ impl<'a, 'b> IntoAttribue<'a, 'b> for &'a str {
 
     fn any_attr(self) -> AnyAttribute<'a, 'b> {
         AnyAttribute::Str(self)
+    }
+}
+
+impl<'a, 'b> InNamespace<'a, &'b str> {
+    pub const fn any_attr_const(self) -> AnyAttribute<'a, 'b> {
+        AnyAttribute::InNamespaceStr(self)
     }
 }
 
