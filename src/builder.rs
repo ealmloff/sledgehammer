@@ -242,6 +242,11 @@ impl MsgChannel {
     pub fn remove_style(&mut self, style: &str, id: MaybeId) {
         self.batch.remove_style(style, id)
     }
+
+    /// Adds a batch of operations to the current batch.
+    pub fn append(&mut self, batch: Batch) {
+        self.batch.append(batch);
+    }
 }
 
 /// Something that can be written as a utf-8 string to a buffer

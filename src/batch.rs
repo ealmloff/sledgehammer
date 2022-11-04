@@ -53,8 +53,10 @@ pub(crate) enum Op {
     /// Remove an attribute from a node.
     RemoveAttribute = 16,
 
+    /// Set a style property on a node.
     SetStyle = 17,
 
+    /// Remove a style property from a node.
     RemoveStyle = 18,
 
     /// Clones a node.
@@ -62,6 +64,9 @@ pub(crate) enum Op {
 
     /// Clones the children of a node. (allows cloning fragments)
     CloneNodeChildren = 20,
+
+    /// Does nothing, but allows us to skip a byte.
+    NoOp = 21,
 }
 
 pub struct Batch {
@@ -77,7 +82,7 @@ impl Default for Batch {
         Self {
             msg: Vec::new(),
             str_buf: Vec::new(),
-            current_op_byte_idx: 3,
+            current_op_byte_idx: 4,
             current_op_bit_pack_index: 0,
             current_op_batch_idx: 0,
         }
@@ -387,5 +392,19 @@ impl Batch {
         } else {
             todo!("handle more than 3 bools in a op");
         }
+    }
+
+    pub(crate) fn append(&mut self, mut batch: Self) {
+        // add empty operations to the batch to make sure the batch is aligned
+        let operations_left = 3 - (self.current_op_byte_idx - self.current_op_batch_idx);
+        for _ in 0..operations_left {
+            self.encode_op(Op::NoOp);
+        }
+
+        self.current_op_byte_idx = self.msg.len() + batch.current_op_byte_idx;
+        self.current_op_batch_idx = self.msg.len() + batch.current_op_batch_idx;
+        self.current_op_bit_pack_index = batch.current_op_bit_pack_index;
+        self.str_buf.extend_from_slice(&batch.str_buf);
+        self.msg.append(&mut batch.msg);
     }
 }
