@@ -1,173 +1,135 @@
 #![allow(non_camel_case_types)]
 
-use crate::value::IntoValue;
-use crate::MsgChannel;
-
 use self::sealed::Sealed;
+use crate::{InNamespace, MsgChannel};
 
 mod sealed {
-    use crate::Attribute;
+    use crate::{Attribute, InNamespace};
 
     pub trait Sealed {}
 
     impl Sealed for Attribute {}
-    impl<S: AsRef<str>> Sealed for S {}
+    impl<'a> Sealed for InNamespace<'a, Attribute> {}
+    impl<'a> Sealed for &'a str {}
+    impl<'a, 'b> Sealed for InNamespace<'b, &'a str> {}
+}
+
+pub enum AnyAttribute<'a, 'b> {
+    Attribute(Attribute),
+    InNamespace(InNamespace<'a, Attribute>),
+    Str(&'a str),
+    InNamespaceStr(InNamespace<'a, &'b str>),
+}
+
+impl AnyAttribute<'_, '_> {
+    pub fn encode_u8_discriminant(&self, v: &mut MsgChannel) {
+        match self {
+            AnyAttribute::Attribute(a) => a.encode_u8_discriminant(v),
+            AnyAttribute::InNamespace(a) => a.encode_u8_discriminant(v),
+            AnyAttribute::Str(a) => a.encode_u8_discriminant(v),
+            AnyAttribute::InNamespaceStr(a) => a.encode_u8_discriminant(v),
+        }
+    }
 }
 
 /// Anything that can be turned into an attribute
-pub trait IntoAttribue: Sealed {
-    /// If the attribute has a namespace
-    const HAS_NS: bool;
+pub trait IntoAttribue<'a, 'b>: Sealed {
     /// Encode the attribute into the message channel
     fn encode(self, v: &mut MsgChannel);
     /// Encode the attribute into the message channel with a u8 desciminant instead of bit packed bools
-    fn encode_u8_discriminant(self, v: &mut MsgChannel);
+    fn encode_u8_discriminant(&self, v: &mut MsgChannel);
+    /// Turn into an [`AnyAttribute`]
+    fn any_attr(self) -> AnyAttribute<'a, 'b>;
 }
 
-impl IntoAttribue for Attribute {
-    const HAS_NS: bool = false;
+impl<'a, 'b> Attribute {
+    pub const fn any_attr_const(self) -> AnyAttribute<'a, 'b> {
+        AnyAttribute::Attribute(self)
+    }
+}
+
+impl<'a, 'b> IntoAttribue<'a, 'b> for Attribute {
     fn encode(self, v: &mut MsgChannel) {
         v.encode_bool(false);
-        v.msg.push(self as u8)
+        v.msg.push(self as u8);
+        v.encode_bool(false);
     }
-    fn encode_u8_discriminant(self, v: &mut MsgChannel) {
-        v.msg.push(self as u8)
+
+    fn encode_u8_discriminant(&self, v: &mut MsgChannel) {
+        v.msg.push(*self as u8)
+    }
+
+    fn any_attr(self) -> AnyAttribute<'a, 'b> {
+        AnyAttribute::Attribute(self)
     }
 }
 
-impl<S: AsRef<str>> IntoAttribue for S {
-    const HAS_NS: bool = false;
+impl<'a, 'b> InNamespace<'a, Attribute> {
+    pub const fn any_attr_const(self) -> AnyAttribute<'a, 'b> {
+        AnyAttribute::InNamespace(self)
+    }
+}
+
+impl<'a, 'b> IntoAttribue<'a, 'b> for InNamespace<'a, Attribute> {
+    fn encode(self, v: &mut MsgChannel) {
+        v.encode_bool(false);
+        v.msg.push(self.0 as u8);
+        v.encode_bool(true);
+        v.encode_str(self.1);
+    }
+
+    fn encode_u8_discriminant(&self, v: &mut MsgChannel) {
+        v.msg.push(255);
+        v.msg.push(self.0 as u8);
+        v.encode_str(self.1);
+    }
+
+    fn any_attr(self) -> AnyAttribute<'a, 'b> {
+        AnyAttribute::InNamespace(self)
+    }
+}
+
+impl<'a, 'b> IntoAttribue<'a, 'b> for &'a str {
     fn encode(self, v: &mut MsgChannel) {
         v.encode_bool(true);
-        v.encode_cachable_str(self.as_ref());
+        v.encode_cachable_str(self);
+        v.encode_bool(false);
     }
-    fn encode_u8_discriminant(self, v: &mut MsgChannel) {
-        v.msg.push(255);
-        v.encode_cachable_str(self.as_ref());
+
+    fn encode_u8_discriminant(&self, v: &mut MsgChannel) {
+        v.msg.push(254);
+        v.encode_cachable_str(*self);
+    }
+
+    fn any_attr(self) -> AnyAttribute<'a, 'b> {
+        AnyAttribute::Str(self)
     }
 }
 
-/// Something that can be turned into a list of attributes and values
-#[allow(clippy::len_without_is_empty)]
-pub trait ManyAttrs: sealed_many_attrs::Sealed {
-    /// The number of attribute value pairs
-    fn len(&self) -> usize;
-    /// Encode the attributes into the message channel
-    fn encode(self, v: &mut MsgChannel);
+impl<'a, 'b> InNamespace<'a, &'b str> {
+    pub const fn any_attr_const(self) -> AnyAttribute<'a, 'b> {
+        AnyAttribute::InNamespaceStr(self)
+    }
 }
 
-impl ManyAttrs for () {
-    fn len(&self) -> usize {
-        0
-    }
-
+impl<'a, 'b> IntoAttribue<'a, 'b> for InNamespace<'a, &'b str> {
     fn encode(self, v: &mut MsgChannel) {
-        v.msg.push(<Self as ManyAttrs>::len(&self) as u8);
+        v.encode_bool(true);
+        v.encode_cachable_str(self.0);
+        v.encode_bool(true);
+        v.encode_cachable_str(self.1);
+    }
+
+    fn encode_u8_discriminant(&self, v: &mut MsgChannel) {
+        v.msg.push(253);
+        v.encode_cachable_str(self.0);
+        v.encode_cachable_str(self.1);
+    }
+
+    fn any_attr(self) -> AnyAttribute<'a, 'b> {
+        AnyAttribute::InNamespaceStr(self)
     }
 }
-
-macro_rules! impl_many_attrs {
-    (
-        $(
-            $( (($t:ident, $i:ident):($v:ident, $m:ident)) ,)+:$l:literal
-        )+
-    ) => {
-        mod sealed_many_attrs {
-            use super::*;
-
-            pub trait Sealed {}
-
-            impl Sealed for () {}
-            $(
-                impl< $($t, $v),+ > Sealed for ($(($t, $v),)+)
-                    where $($t: IntoAttribue, $v: IntoValue),+ {
-
-                }
-            )+
-        }
-        $(
-            impl< $($t, $v),+ > ManyAttrs for ($(($t, $v),)+)
-                where $($t: IntoAttribue, $v: IntoValue),+ {
-                fn len(&self) -> usize {
-                    $l
-                }
-
-                fn encode(self, v: &mut MsgChannel) {
-                    v.msg.push(self.len() as u8);
-                    let ($(($i, $m),)+) = self;
-                    $($i.encode_u8_discriminant(v);$m.encode(v);)+
-                }
-            }
-        )+
-    };
-}
-
-impl_many_attrs!(((T1, t1): (A1, a1)),:1
-((T1, t1): (A1, a1)), ((T2, t2): (A2, a2)),:2
-    ((T1, t1): (A1, a1)),
-    ((T2, t2): (A2, a2)),
-    ((T3, t3): (A3, a3)),:3
-    ((T1, t1): (A1, a1)),
-    ((T2, t2): (A2, a2)),
-    ((T3, t3): (A3, a3)),
-    ((T4, t4): (A4, a4)),:4
-    ((T1, t1): (A1, a1)),
-    ((T2, t2): (A2, a2)),
-    ((T3, t3): (A3, a3)),
-    ((T4, t4): (A4, a4)),
-    ((T5, t5): (A5, a5)),:5
-    ((T1, t1): (A1, a1)),
-    ((T2, t2): (A2, a2)),
-    ((T3, t3): (A3, a3)),
-    ((T4, t4): (A4, a4)),
-    ((T5, t5): (A5, a5)),
-    ((T6, t6): (A6, a6)),:6
-    ((T1, t1): (A1, a1)),
-    ((T2, t2): (A2, a2)),
-    ((T3, t3): (A3, a3)),
-    ((T4, t4): (A4, a4)),
-    ((T5, t5): (A5, a5)),
-    ((T6, t6): (A6, a6)),
-    ((T7, t7): (A7, a7)),:7
-    ((T1, t1): (A1, a1)),
-    ((T2, t2): (A2, a2)),
-    ((T3, t3): (A3, a3)),
-    ((T4, t4): (A4, a4)),
-    ((T5, t5): (A5, a5)),
-    ((T6, t6): (A6, a6)),
-    ((T7, t7): (A7, a7)),
-    ((T8, t8): (A8, a8)),:8
-    ((T1, t1): (A1, a1)),
-    ((T2, t2): (A2, a2)),
-    ((T3, t3): (A3, a3)),
-    ((T4, t4): (A4, a4)),
-    ((T5, t5): (A5, a5)),
-    ((T6, t6): (A6, a6)),
-    ((T7, t7): (A7, a7)),
-    ((T8, t8): (A8, a8)),
-    ((T9, t9): (A9, a9)),:9
-    ((T1, t1): (A1, a1)),
-    ((T2, t2): (A2, a2)),
-    ((T3, t3): (A3, a3)),
-    ((T4, t4): (A4, a4)),
-    ((T5, t5): (A5, a5)),
-    ((T6, t6): (A6, a6)),
-    ((T7, t7): (A7, a7)),
-    ((T8, t8): (A8, a8)),
-    ((T9, t9): (A9, a9)),
-    ((T10, t10): (A10, a10)),:10
-    ((T1, t1): (A1, a1)),
-    ((T2, t2): (A2, a2)),
-    ((T3, t3): (A3, a3)),
-    ((T4, t4): (A4, a4)),
-    ((T5, t5): (A5, a5)),
-    ((T6, t6): (A6, a6)),
-    ((T7, t7): (A7, a7)),
-    ((T8, t8): (A8, a8)),
-    ((T9, t9): (A9, a9)),
-    ((T10, t10): (A10, a10)),
-    ((T11, t11): (A11, a11)),:11
-);
 
 pub enum Attribute {
     accept_charset,

@@ -44,7 +44,7 @@ function exOp() {
             return true;
         // create full element
         case 6:
-            inptr.createFullElement();
+            inptr.lastNode = inptr.createFullElement();
             break;
         // append children
         case 7:
@@ -163,18 +163,9 @@ function exOp() {
             break;
         // create element
         case 13:
-            name = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true));
-            inptr.u8BufPos += 2;
-            // the first bool is encoded as op & (1 << 5)
-            if (op & 0x20) {
-                inptr.lastNode = document.createElementNS(name, inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true)));
-                inptr.u8BufPos += 2;
-            }
-            else {
-                inptr.lastNode = document.createElement(name);
-            }
+            inptr.lastNode = inptr.createElement();
             // the second bool is encoded as op & (1 << 6)
-            if (op & 0x40) {
+            if (op & 0x20) {
                 inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)] = inptr.lastNode;
                 inptr.u8BufPos += 4;
             }
@@ -204,17 +195,36 @@ function exOp() {
                 node = inptr.lastNode;
             }
             // the second bool is encoded as op & (1 << 6)
+            // first bool encodes if the attribute is a string
             if (op & 0x40) {
                 attr = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true));
                 inptr.u8BufPos += 2;
-                node.setAttribute(attr, inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true)));
+                // the third bool is encoded as op & (1 << 7)
+                // second bool encodes if the attribute has a namespace
+                if (op & 0x80) {
+                    ns = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true));
+                    inptr.u8BufPos += 2;
+                    node.setAttributeNS(ns, attr, inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true)));
+                }
+                else {
+                    node.setAttribute(attr, inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true)));
+                }
                 inptr.u8BufPos += 2;
             } else {
-                node.setAttribute(attrs[inptr.view.getUint8(inptr.u8BufPos++)], inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true)));
+                // the third bool is encoded as op & (1 << 7)
+                // second bool encodes if the attribute has a namespace
+                if (op & 0x80) {
+                    ns = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true));
+                    inptr.u8BufPos += 2;
+                    node.setAttributeNS(ns, attrs[inptr.view.getUint8(inptr.u8BufPos++)], inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true)));
+                }
+                else {
+                    node.setAttribute(attrs[inptr.view.getUint8(inptr.u8BufPos++)], inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true)));
+                }
                 inptr.u8BufPos += 2;
             }
             break;
-        // set attribute ns
+        // remove attribute
         case 16:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
@@ -224,20 +234,33 @@ function exOp() {
             else {
                 node = inptr.lastNode;
             }
-            attr = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true));
-            inptr.u8BufPos += 2;
-            ns = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true));
-            inptr.u8BufPos += 2;
-            value = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true));
-            inptr.u8BufPos += 2;
-            if (ns === "style") {
-                // @ts-ignore
-                node.style[attr] = value;
-            } else if (ns != null || ns != undefined) {
-                node.setAttributeNS(ns, attr, value);
+            // the second bool is encoded as op & (1 << 6)
+            // second bool encodes if the attribute is a string
+            if (op & 0x40) {
+                // the third bool is encoded as op & (1 << 7)
+                // second bool encodes if the attribute has a namespace
+                if (op & 0x80) {
+                    attr = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true));
+                    inptr.u8BufPos += 2;
+                    node.removeAttributeNS(inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true)), attr);
+                    inptr.u8BufPos += 2;
+                } else {
+                    node.removeAttribute(inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true)));
+                    inptr.u8BufPos += 2;
+                }
+            } else {
+                // the third bool is encoded as op & (1 << 7)
+                // second bool encodes if the attribute has a namespace
+                if (op & 0x80) {
+                    attr = attrs[inptr.view.getUint8(inptr.u8BufPos++)];
+                    node.removeAttributeNS(inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true)), attr);
+                }
+                else {
+                    node.removeAttribute(attrs[inptr.view.getUint8(inptr.u8BufPos++)]);
+                }
             }
             break;
-        // remove attribute
+        // set style
         case 17:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
@@ -247,15 +270,10 @@ function exOp() {
             else {
                 node = inptr.lastNode;
             }
-            // the second bool is encoded as op & (1 << 6)
-            if (op & 0x40) {
-                node.removeAttribute(inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true)));
-                inptr.u8BufPos += 2;
-            } else {
-                node.removeAttribute(attrs[inptr.view.getUint8(inptr.u8BufPos++)]);
-            }
+            node.style.setProperty(inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true)), inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos + 2, true)));
+            inptr.u8BufPos += 4;
             break;
-        // remove attribute ns
+        // remove style
         case 18:
             // the first bool is encoded as op & (1 << 5)
             if (op & 0x20) {
@@ -265,9 +283,7 @@ function exOp() {
             else {
                 node = inptr.lastNode;
             }
-            attr = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true));
-            inptr.u8BufPos += 2;
-            node.removeAttributeNS(inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true)), attr);
+            node.style.removeProperty(inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true)));
             inptr.u8BufPos += 2;
             break;
         // clone node
@@ -379,13 +395,28 @@ export class JsInterpreter {
 
     createElement() {
         element = this.view.getUint8(this.u8BufPos++);
-        if (element === 255) {
-            element = document.createElement(this.strings.substring(this.strPos, this.strPos += this.view.getUint16(this.u8BufPos, true)));
-            this.u8BufPos += 2;
-            return element;
-        }
-        else {
-            return document.createElement(els[element]);
+        switch (element) {
+            case 255:
+                // the element is encoded as an enum and the namespace is encoded as a string
+                element = document.createElement(els[this.view.getUint8(this.u8BufPos++)], this.strings.substring(this.strPos, this.strPos += this.view.getUint16(this.u8BufPos, true)));
+                this.u8BufPos += 2;
+                return element;
+            case 254:
+                // the element is encoded as a string
+                element = document.createElement(this.strings.substring(this.strPos, this.strPos += this.view.getUint16(this.u8BufPos, true)));
+                this.u8BufPos += 2;
+                return element;
+            case 253:
+                // the element and namespace are encoded as strings
+                element = this.strings.substring(this.strPos, this.strPos += this.view.getUint16(this.u8BufPos, true));
+                this.u8BufPos += 2;
+                element = document.createElementNS(this.strings.substring(this.strPos, this.strPos += this.view.getUint16(this.u8BufPos, true)), element);
+                this.u8BufPos += 2;
+                console.log("creating", element);
+                return element;
+            default:
+                // the element is encoded as an enum
+                return document.createElement(els[element]);
         }
     }
 
@@ -396,7 +427,21 @@ export class JsInterpreter {
         for (i = 0; i < numAttributes; i++) {
             attr = this.view.getUint8(this.u8BufPos++);
             switch (attr) {
+                case 255:
+                    // the attribute is encoded as an enum and the namespace is encoded as a string
+                    attr = attrs[this.view.getUint8(this.u8BufPos++)];
+                    parent_element.setAttributeNS(this.strings.substring(this.strPos, this.strPos += this.view.getUint16(this.u8BufPos, true)), attr);
+                    this.u8BufPos += 2;
+                    break;
                 case 254:
+                    // the attribute is encoded as a string
+                    attr = this.strings.substring(this.strPos, this.strPos += this.view.getUint16(this.u8BufPos, true));
+                    this.u8BufPos += 2;
+                    parent_element.setAttribute(attr, this.strings.substring(this.strPos, this.strPos += this.view.getUint16(this.u8BufPos, true)));
+                    this.u8BufPos += 2;
+                    break;
+                case 253:
+                    // the attribute and namespace are encoded as strings
                     attr = this.strings.substring(this.strPos, this.strPos += this.view.getUint16(this.u8BufPos, true));
                     this.u8BufPos += 2;
                     ns = this.strings.substring(this.strPos, this.strPos += this.view.getUint16(this.u8BufPos, true));
@@ -404,12 +449,6 @@ export class JsInterpreter {
                     value = this.strings.substring(this.strPos, this.strPos += this.view.getUint16(this.u8BufPos, true));
                     this.u8BufPos += 2;
                     parent_element.setAttributeNS(ns, attr, value);
-                    break;
-                case 255:
-                    attr = this.strings.substring(this.strPos, this.strPos += this.view.getUint16(this.u8BufPos, true));
-                    this.u8BufPos += 2;
-                    parent_element.setAttribute(attr, this.strings.substring(this.strPos, this.strPos += this.view.getUint16(this.u8BufPos, true)));
-                    this.u8BufPos += 2;
                     break;
                 default:
                     parent_element.setAttribute(attrs[attr], this.strings.substring(this.strPos, this.strPos += this.view.getUint16(this.u8BufPos, true)));
