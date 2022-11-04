@@ -94,18 +94,28 @@ pub struct ElementBuilder<'a> {
 }
 
 impl<'a> ElementBuilder<'a> {
-    pub const fn new(
-        id: Option<NodeId>,
-        kind: AnyElement<'a, 'a>,
-        attrs: &'a [(AnyAttribute<'a, 'a>, &'a str)],
-        children: &'a [ElementBuilder<'a>],
-    ) -> Self {
+    pub const fn new(kind: AnyElement<'a, 'a>) -> Self {
         Self {
-            id,
+            id: None,
             kind,
-            attrs,
-            children,
+            attrs: &[],
+            children: &[],
         }
+    }
+
+    pub const fn id(mut self, id: NodeId) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    pub const fn attrs(mut self, attrs: &'a [(AnyAttribute<'a, 'a>, &'a str)]) -> Self {
+        self.attrs = attrs;
+        self
+    }
+
+    pub const fn children(mut self, children: &'a [ElementBuilder<'a>]) -> Self {
+        self.children = children;
+        self
     }
 
     pub(crate) fn encode(&self, v: &mut MsgChannel) {

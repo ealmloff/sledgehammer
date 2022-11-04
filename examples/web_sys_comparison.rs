@@ -30,32 +30,26 @@ fn main() {
     channel.set_node(NodeId(0), JsCast::dyn_into(body).unwrap());
 
     // create an element using sledgehammer
-    channel.build_full_element(ElementBuilder::new(
-        Some(NodeId(1)),
-        Element::div.any_element(),
-        &[],
-        &[
-            ElementBuilder::new(
-                Some(NodeId(2)),
-                Element::p.any_element(),
-                &[(Attribute::style.any_attr(), "color: blue")],
-                &[],
-            ),
-            ElementBuilder::new(
-                None,
-                "svg"
-                    .in_namespace("http://www.w3.org/2000/svg")
-                    .any_element(),
-                &[(
+    channel.build_full_element(
+        ElementBuilder::new(Element::div.any_element())
+            .id(NodeId(1))
+            .children(&[
+                ElementBuilder::new(Element::p.any_element())
+                    .id(NodeId(2))
+                    .attrs(&[(Attribute::style.any_attr(), "color: blue")]),
+                ElementBuilder::new(
+                    "svg"
+                        .in_namespace("http://www.w3.org/2000/svg")
+                        .any_element(),
+                )
+                .attrs(&[(
                     "width"
                         .in_namespace("http://www.w3.org/2000/svg")
                         .any_attr(),
-                    "100px",
-                )],
-                &[],
-            ),
-        ],
-    ));
+                    "100%",
+                )]),
+            ]),
+    );
 
     channel.set_text("Hello from sledehammer!", MaybeId::Node(NodeId(2)));
 
