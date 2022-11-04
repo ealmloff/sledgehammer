@@ -412,7 +412,6 @@ export class JsInterpreter {
                 this.u8BufPos += 2;
                 element = document.createElementNS(this.strings.substring(this.strPos, this.strPos += this.view.getUint16(this.u8BufPos, true)), element);
                 this.u8BufPos += 2;
-                console.log("creating", element);
                 return element;
             default:
                 // the element is encoded as an enum

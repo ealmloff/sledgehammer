@@ -75,6 +75,7 @@
 
 // mod attrs;
 pub mod attribute;
+pub mod batch;
 pub mod builder;
 pub mod element;
 
