@@ -5,7 +5,8 @@ use web_sys::Node;
 
 use crate::{
     element::ElementBuilderExt, last_needs_memory, update_last_memory, work_last_created,
-    IntoAttribue, JsInterpreter, MSG_METADATA_PTR, MSG_PTR_PTR, STR_LEN_PTR, STR_PTR_PTR,
+    IntoAttribue, IntoElement, JsInterpreter, MSG_METADATA_PTR, MSG_PTR_PTR, STR_LEN_PTR,
+    STR_PTR_PTR,
 };
 
 /// An id that may be either the last node or a node with an assigned id.
@@ -120,14 +121,8 @@ enum Op {
     /// Set the value of a node's attribute.
     SetAttribute = 15,
 
-    /// Set the value of a node's attribute.
-    SetAttributeNs = 16,
-
     /// Remove an attribute from a node.
     RemoveAttribute = 17,
-
-    /// Remove an attribute from a node.
-    RemoveAttributeNs = 18,
 
     /// Clones a node.
     CloneNode = 19,
@@ -227,21 +222,10 @@ impl MsgChannel {
     }
 
     /// Create a new element node
-    pub fn create_element(
-        &mut self,
-        tag: impl WritableText,
-        ns: Option<impl WritableText>,
-        id: MaybeId,
-    ) {
+    pub fn create_element(&mut self, tag: impl IntoElement, id: Option<NodeId>) {
         self.encode_op(Op::CreateElement);
-        self.encode_cachable_str(tag);
-        if let Some(ns) = ns {
-            self.encode_bool(true);
-            self.encode_cachable_str(ns);
-        } else {
-            self.encode_bool(false);
-        }
-        self.encode_maybe_id(id);
+        tag.encode(self);
+        self.encode_optional_id(id);
     }
 
     /// Set the textcontent of a node.
@@ -258,11 +242,7 @@ impl MsgChannel {
         value: impl WritableText,
         root: MaybeId,
     ) {
-        if A::HAS_NS {
-            self.encode_op(Op::SetAttributeNs);
-        } else {
-            self.encode_op(Op::SetAttribute);
-        }
+        self.encode_op(Op::SetAttribute);
         self.encode_maybe_id(root);
         attr.encode(self);
         self.encode_str(value);
@@ -270,11 +250,7 @@ impl MsgChannel {
 
     /// Remove an attribute from a node.
     pub fn remove_attribute<A: IntoAttribue>(&mut self, attr: A, root: MaybeId) {
-        if A::HAS_NS {
-            self.encode_op(Op::RemoveAttributeNs);
-        } else {
-            self.encode_op(Op::RemoveAttribute);
-        }
+        self.encode_op(Op::RemoveAttribute);
         self.encode_maybe_id(root);
         attr.encode(self);
     }
@@ -291,7 +267,7 @@ impl MsgChannel {
         self.encode_op(Op::CloneNodeChildren);
         self.encode_maybe_id(id);
         for id in new_ids {
-            self.encode_optional_id_with_byte_bool(Some(NodeId(id)));
+            self.encode_optional_id_with_byte_bool(Some(id));
         }
     }
 

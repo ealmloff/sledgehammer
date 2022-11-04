@@ -77,12 +77,10 @@
 pub mod attribute;
 pub mod builder;
 pub mod element;
-pub mod value;
 
 pub use attribute::{Attribute, IntoAttribue};
-pub use builder::{MsgChannel, NodeId};
+pub use builder::{MsgChannel, NodeId, WritableText};
 pub use element::{Element, ElementBuilder, IntoElement};
-pub use value::IntoValue;
 
 use wasm_bindgen::prelude::*;
 use web_sys::Node;
@@ -104,8 +102,8 @@ static mut STR_LEN: usize = 0;
 #[used]
 static mut STR_LEN_PTR: *const usize = unsafe { &STR_LEN } as *const usize;
 
-#[wasm_bindgen(module = "/interpreter_opt.js")]
-// #[wasm_bindgen(module = "/interpreter.js")]
+// #[wasm_bindgen(module = "/interpreter_opt.js")]
+#[wasm_bindgen(module = "/interpreter.js")]
 extern "C" {
     fn work_last_created();
 
@@ -138,3 +136,18 @@ extern "C" {
     #[wasm_bindgen(method)]
     pub(crate) fn GetNode(this: &JsInterpreter, id: u32) -> Node;
 }
+
+pub struct InNamespace<'a, T>(pub T, pub &'a str);
+
+pub trait WithNsExt {
+    fn in_namespace(self, namespace: &str) -> InNamespace<Self>
+    where
+        Self: Sized,
+    {
+        InNamespace(self, namespace)
+    }
+}
+
+impl WithNsExt for Element {}
+impl WithNsExt for Attribute {}
+impl<'a> WithNsExt for &'a str {}

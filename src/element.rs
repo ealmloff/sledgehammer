@@ -1,54 +1,51 @@
 #![allow(non_camel_case_types)]
 
-use std::ops::RangeInclusive;
-
-use crate::{
-    attribute::ManyAttrs,
-    builder::{MaybeId, MsgChannel},
-    NodeId,
-};
+use crate::{attribute::ManyAttrs, builder::MsgChannel, InNamespace, NodeId};
 
 use self::sealed::Sealed;
 
 mod sealed {
-    use crate::Element;
+    use crate::{Element, InNamespace};
 
     pub trait Sealed {}
 
     impl Sealed for Element {}
-    impl<S: AsRef<str>> Sealed for S {}
+    impl<'a> Sealed for &'a str {}
+    impl<'a> Sealed for InNamespace<'a, Element> {}
+    impl<'a, 'b> Sealed for InNamespace<'a, &'b str> {}
 }
 
 /// Anything that can be turned into an element name
 pub trait IntoElement: Sealed {
-    const LEN: RangeInclusive<Option<usize>>;
-
-    fn size(&self) -> usize;
     fn encode(self, v: &mut MsgChannel);
 }
 
 impl IntoElement for Element {
-    const LEN: RangeInclusive<Option<usize>> = Some(1)..=Some(1);
-
-    fn size(&self) -> usize {
-        1
-    }
-
     fn encode(self, v: &mut MsgChannel) {
-        v.msg.push(self as u8)
+        v.msg.push(self as u8);
     }
 }
 
-impl<S: AsRef<str>> IntoElement for S {
-    const LEN: RangeInclusive<Option<usize>> = Some(2)..=None;
-
-    fn size(&self) -> usize {
-        self.as_ref().len() + 2
-    }
-
+impl<'a> IntoElement for InNamespace<'a, Element> {
     fn encode(self, v: &mut MsgChannel) {
         v.msg.push(255);
-        v.encode_str(self.as_ref());
+        v.msg.push(self.0 as u8);
+        v.encode_str(self.1);
+    }
+}
+
+impl<'a> IntoElement for &'a str {
+    fn encode(self, v: &mut MsgChannel) {
+        v.msg.push(254);
+        v.encode_str(self);
+    }
+}
+
+impl<'a, 'b> IntoElement for InNamespace<'a, &'b str> {
+    fn encode(self, v: &mut MsgChannel) {
+        v.msg.push(253);
+        v.encode_str(self.0);
+        v.encode_str(self.1);
     }
 }
 

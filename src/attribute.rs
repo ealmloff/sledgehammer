@@ -1,23 +1,22 @@
 #![allow(non_camel_case_types)]
 
-use crate::value::IntoValue;
-use crate::MsgChannel;
-
 use self::sealed::Sealed;
+use crate::builder::WritableText;
+use crate::{InNamespace, MsgChannel};
 
 mod sealed {
-    use crate::Attribute;
+    use crate::{Attribute, InNamespace};
 
     pub trait Sealed {}
 
     impl Sealed for Attribute {}
-    impl<S: AsRef<str>> Sealed for S {}
+    impl<'a> Sealed for InNamespace<'a, Attribute> {}
+    impl<'a> Sealed for &'a str {}
+    impl<'a, 'b> Sealed for InNamespace<'b, &'a str> {}
 }
 
 /// Anything that can be turned into an attribute
 pub trait IntoAttribue: Sealed {
-    /// If the attribute has a namespace
-    const HAS_NS: bool;
     /// Encode the attribute into the message channel
     fn encode(self, v: &mut MsgChannel);
     /// Encode the attribute into the message channel with a u8 desciminant instead of bit packed bools
@@ -25,25 +24,53 @@ pub trait IntoAttribue: Sealed {
 }
 
 impl IntoAttribue for Attribute {
-    const HAS_NS: bool = false;
     fn encode(self, v: &mut MsgChannel) {
         v.encode_bool(false);
-        v.msg.push(self as u8)
+        v.msg.push(self as u8);
+        v.encode_bool(false);
     }
     fn encode_u8_discriminant(self, v: &mut MsgChannel) {
         v.msg.push(self as u8)
     }
 }
 
-impl<S: AsRef<str>> IntoAttribue for S {
-    const HAS_NS: bool = false;
+impl<'a> IntoAttribue for InNamespace<'a, Attribute> {
     fn encode(self, v: &mut MsgChannel) {
+        v.encode_bool(false);
+        v.msg.push(self.0 as u8);
         v.encode_bool(true);
-        v.encode_cachable_str(self.as_ref());
+        v.encode_str(self.1);
     }
     fn encode_u8_discriminant(self, v: &mut MsgChannel) {
         v.msg.push(255);
-        v.encode_cachable_str(self.as_ref());
+        v.msg.push(self.0 as u8);
+        v.encode_str(self.1);
+    }
+}
+
+impl<'a> IntoAttribue for &'a str {
+    fn encode(self, v: &mut MsgChannel) {
+        v.encode_bool(true);
+        v.encode_cachable_str(self);
+        v.encode_bool(false);
+    }
+    fn encode_u8_discriminant(self, v: &mut MsgChannel) {
+        v.msg.push(254);
+        v.encode_cachable_str(self);
+    }
+}
+
+impl<'a, 'b> IntoAttribue for InNamespace<'b, &'a str> {
+    fn encode(self, v: &mut MsgChannel) {
+        v.encode_bool(true);
+        v.encode_cachable_str(self.0);
+        v.encode_bool(true);
+        v.encode_cachable_str(self.1);
+    }
+    fn encode_u8_discriminant(self, v: &mut MsgChannel) {
+        v.msg.push(253);
+        v.encode_cachable_str(self.0);
+        v.encode_cachable_str(self.1);
     }
 }
 
@@ -80,14 +107,14 @@ macro_rules! impl_many_attrs {
             impl Sealed for () {}
             $(
                 impl< $($t, $v),+ > Sealed for ($(($t, $v),)+)
-                    where $($t: IntoAttribue, $v: IntoValue),+ {
+                    where $($t: IntoAttribue, $v: WritableText),+ {
 
                 }
             )+
         }
         $(
             impl< $($t, $v),+ > ManyAttrs for ($(($t, $v),)+)
-                where $($t: IntoAttribue, $v: IntoValue),+ {
+                where $($t: IntoAttribue, $v: WritableText),+ {
                 fn len(&self) -> usize {
                     $l
                 }
@@ -95,7 +122,7 @@ macro_rules! impl_many_attrs {
                 fn encode(self, v: &mut MsgChannel) {
                     v.msg.push(self.len() as u8);
                     let ($(($i, $m),)+) = self;
-                    $($i.encode_u8_discriminant(v);$m.encode(v);)+
+                    $($i.encode_u8_discriminant(v);v.encode_str($m);)+
                 }
             }
         )+
