@@ -32,22 +32,29 @@ fn main() {
     // create an element using sledgehammer
     channel.build_full_element(ElementBuilder::new(
         Some(NodeId(1)),
-        Element::div,
-        (),
-        (
+        Element::div.any_element(),
+        &[],
+        &[
             ElementBuilder::new(
                 Some(NodeId(2)),
-                Element::p,
-                ((Attribute::style, "color: blue"),),
-                (),
+                Element::p.any_element(),
+                &[(Attribute::style.any_attr(), "color: blue")],
+                &[],
             ),
             ElementBuilder::new(
                 None,
-                "svg".in_namespace("http://www.w3.org/2000/svg"),
-                (("width".in_namespace("http://www.w3.org/2000/svg"), "100px"),),
-                (),
+                "svg"
+                    .in_namespace("http://www.w3.org/2000/svg")
+                    .any_element(),
+                &[(
+                    "width"
+                        .in_namespace("http://www.w3.org/2000/svg")
+                        .any_attr(),
+                    "100px",
+                )],
+                &[],
             ),
-        ),
+        ],
     ));
 
     channel.set_text("Hello from sledehammer!", MaybeId::Node(NodeId(2)));

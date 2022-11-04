@@ -4,9 +4,8 @@ use ufmt::{uWrite, uwrite};
 use web_sys::Node;
 
 use crate::{
-    element::ElementBuilderExt, last_needs_memory, update_last_memory, work_last_created,
-    IntoAttribue, IntoElement, JsInterpreter, MSG_METADATA_PTR, MSG_PTR_PTR, STR_LEN_PTR,
-    STR_PTR_PTR,
+    last_needs_memory, update_last_memory, work_last_created, ElementBuilder, IntoAttribue,
+    IntoElement, JsInterpreter, MSG_METADATA_PTR, MSG_PTR_PTR, STR_LEN_PTR, STR_PTR_PTR,
 };
 
 /// An id that may be either the last node or a node with an assigned id.
@@ -226,7 +225,7 @@ impl MsgChannel {
     }
 
     /// Create a new element node
-    pub fn create_element(&mut self, tag: impl IntoElement, id: Option<NodeId>) {
+    pub fn create_element<'a, 'b>(&mut self, tag: impl IntoElement<'a, 'b>, id: Option<NodeId>) {
         self.encode_op(Op::CreateElement);
         tag.encode(self);
         self.encode_optional_id(id);
@@ -240,9 +239,9 @@ impl MsgChannel {
     }
 
     /// Set the value of a node's attribute.
-    pub fn set_attribute(
+    pub fn set_attribute<'a, 'b>(
         &mut self,
-        attr: impl IntoAttribue,
+        attr: impl IntoAttribue<'a, 'b>,
         value: impl WritableText,
         root: MaybeId,
     ) {
@@ -253,7 +252,7 @@ impl MsgChannel {
     }
 
     /// Remove an attribute from a node.
-    pub fn remove_attribute(&mut self, attr: impl IntoAttribue, root: MaybeId) {
+    pub fn remove_attribute<'a, 'b>(&mut self, attr: impl IntoAttribue<'a, 'b>, root: MaybeId) {
         self.encode_op(Op::RemoveAttribute);
         self.encode_maybe_id(root);
         attr.encode(self);
@@ -303,7 +302,7 @@ impl MsgChannel {
     }
 
     /// Build a full element, slightly more efficent than creating the element creating the element with `create_element` and then setting the attributes.
-    pub fn build_full_element(&mut self, el: impl ElementBuilderExt) {
+    pub fn build_full_element(&mut self, el: ElementBuilder) {
         self.encode_op(Op::BuildFullElement);
         el.encode(self);
     }
