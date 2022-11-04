@@ -4,8 +4,8 @@ use ufmt::{uWrite, uwrite};
 use web_sys::Node;
 
 use crate::{
-    element::ElementBuilderExt, last_needs_memory, update_last_memory, work_last_created,
-    IntoAttribue, JsInterpreter, MSG_METADATA_PTR, MSG_PTR_PTR, STR_LEN_PTR, STR_PTR_PTR,
+    last_needs_memory, update_last_memory, work_last_created, ElementBuilder, IntoAttribue,
+    IntoElement, JsInterpreter, MSG_METADATA_PTR, MSG_PTR_PTR, STR_LEN_PTR, STR_PTR_PTR,
 };
 
 /// An id that may be either the last node or a node with an assigned id.
@@ -120,14 +120,12 @@ enum Op {
     /// Set the value of a node's attribute.
     SetAttribute = 15,
 
-    /// Set the value of a node's attribute.
-    SetAttributeNs = 16,
-
     /// Remove an attribute from a node.
-    RemoveAttribute = 17,
+    RemoveAttribute = 16,
 
-    /// Remove an attribute from a node.
-    RemoveAttributeNs = 18,
+    SetStyle = 17,
+
+    RemoveStyle = 18,
 
     /// Clones a node.
     CloneNode = 19,
@@ -184,13 +182,13 @@ impl MsgChannel {
     }
 
     /// Insert a number of nodes after a given node.
-    pub fn insert_nodes_after(&mut self, root: MaybeId, nodes: Vec<NodeId>) {
+    pub fn insert_nodes_after(&mut self, root: MaybeId, nodes: &[NodeId]) {
         self.encode_op(Op::InsertAfter);
         self.encode_maybe_id(root);
         self.encode_bool(true);
         self.encode_u32(nodes.len() as u32);
         for node in nodes {
-            self.encode_id(node);
+            self.encode_id(*node);
         }
     }
 
@@ -203,13 +201,13 @@ impl MsgChannel {
     }
 
     /// Insert a number of nodes before a given node.
-    pub fn insert_nodes_before(&mut self, root: MaybeId, nodes: Vec<NodeId>) {
+    pub fn insert_nodes_before(&mut self, root: MaybeId, nodes: &[NodeId]) {
         self.encode_op(Op::InsertBefore);
         self.encode_maybe_id(root);
         self.encode_bool(true);
         self.encode_u32(nodes.len() as u32);
         for node in nodes {
-            self.encode_id(node);
+            self.encode_id(*node);
         }
     }
 
@@ -227,21 +225,10 @@ impl MsgChannel {
     }
 
     /// Create a new element node
-    pub fn create_element(
-        &mut self,
-        tag: impl WritableText,
-        ns: Option<impl WritableText>,
-        id: MaybeId,
-    ) {
+    pub fn create_element<'a, 'b>(&mut self, tag: impl IntoElement<'a, 'b>, id: Option<NodeId>) {
         self.encode_op(Op::CreateElement);
-        self.encode_cachable_str(tag);
-        if let Some(ns) = ns {
-            self.encode_bool(true);
-            self.encode_cachable_str(ns);
-        } else {
-            self.encode_bool(false);
-        }
-        self.encode_maybe_id(id);
+        tag.encode(self);
+        self.encode_optional_id(id);
     }
 
     /// Set the textcontent of a node.
@@ -252,29 +239,21 @@ impl MsgChannel {
     }
 
     /// Set the value of a node's attribute.
-    pub fn set_attribute<A: IntoAttribue>(
+    pub fn set_attribute<'a, 'b>(
         &mut self,
-        attr: A,
+        attr: impl IntoAttribue<'a, 'b>,
         value: impl WritableText,
         root: MaybeId,
     ) {
-        if A::HAS_NS {
-            self.encode_op(Op::SetAttributeNs);
-        } else {
-            self.encode_op(Op::SetAttribute);
-        }
+        self.encode_op(Op::SetAttribute);
         self.encode_maybe_id(root);
         attr.encode(self);
         self.encode_str(value);
     }
 
     /// Remove an attribute from a node.
-    pub fn remove_attribute<A: IntoAttribue>(&mut self, attr: A, root: MaybeId) {
-        if A::HAS_NS {
-            self.encode_op(Op::RemoveAttributeNs);
-        } else {
-            self.encode_op(Op::RemoveAttribute);
-        }
+    pub fn remove_attribute<'a, 'b>(&mut self, attr: impl IntoAttribue<'a, 'b>, root: MaybeId) {
+        self.encode_op(Op::RemoveAttribute);
         self.encode_maybe_id(root);
         attr.encode(self);
     }
@@ -291,7 +270,7 @@ impl MsgChannel {
         self.encode_op(Op::CloneNodeChildren);
         self.encode_maybe_id(id);
         for id in new_ids {
-            self.encode_maybe_id_with_byte_bool(MaybeId::Node(id));
+            self.encode_optional_id_with_byte_bool(Some(id));
         }
     }
 
@@ -323,9 +302,37 @@ impl MsgChannel {
     }
 
     /// Build a full element, slightly more efficent than creating the element creating the element with `create_element` and then setting the attributes.
-    pub fn build_full_element(&mut self, el: impl ElementBuilderExt) {
+    pub fn build_full_element(&mut self, el: ElementBuilder) {
         self.encode_op(Op::BuildFullElement);
         el.encode(self);
+    }
+
+    /// Set a style property on a node.
+    pub fn set_style(&mut self, style: &str, value: &str, id: MaybeId) {
+        self.encode_op(Op::SetStyle);
+        self.encode_maybe_id(id);
+        self.encode_str(style);
+        self.encode_str(value);
+    }
+
+    /// Remove a style property from a node.
+    pub fn remove_style(&mut self, style: &str, id: MaybeId) {
+        self.encode_op(Op::RemoveStyle);
+        self.encode_maybe_id(id);
+        self.encode_str(style);
+    }
+
+    #[inline]
+    pub(crate) fn encode_optional_id(&mut self, id: Option<NodeId>) {
+        match id {
+            Some(id) => {
+                self.encode_bool(true);
+                self.encode_id(id);
+            }
+            None => {
+                self.encode_bool(false);
+            }
+        }
     }
 
     #[inline]
@@ -342,13 +349,13 @@ impl MsgChannel {
     }
 
     #[inline]
-    pub(crate) fn encode_maybe_id_with_byte_bool(&mut self, id: MaybeId) {
+    pub(crate) fn encode_optional_id_with_byte_bool(&mut self, id: Option<NodeId>) {
         match id {
-            MaybeId::Node(id) => {
+            Some(id) => {
                 self.msg.push(1);
                 self.encode_id(id);
             }
-            MaybeId::LastNode => {
+            None => {
                 self.msg.push(0);
             }
         }
@@ -428,7 +435,7 @@ impl MsgChannel {
             }
             self.current_op_bit_pack_index += 1;
         } else {
-            todo!("handle more than 2 bools in a op");
+            todo!("handle more than 3 bools in a op");
         }
     }
 
