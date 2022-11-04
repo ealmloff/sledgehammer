@@ -69,6 +69,11 @@ pub(crate) enum Op {
     NoOp = 21,
 }
 
+pub struct FinalizedBatch {
+    pub(crate) msg: Vec<u8>,
+    pub(crate) str: Vec<u8>,
+}
+
 pub struct Batch {
     pub(crate) msg: Vec<u8>,
     pub(crate) str_buf: Vec<u8>,
@@ -90,6 +95,15 @@ impl Default for Batch {
 }
 
 impl Batch {
+    /// Finalizes the batch.
+    pub fn finalize(mut self) -> FinalizedBatch {
+        self.encode_op(Op::Stop);
+        FinalizedBatch {
+            msg: self.msg,
+            str: self.str_buf,
+        }
+    }
+
     /// Appends a number of nodes as children of the given node.
     pub fn append_child(&mut self, root: MaybeId, child: NodeId) {
         self.encode_op(Op::AppendChildren);

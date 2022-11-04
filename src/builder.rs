@@ -4,7 +4,7 @@ use ufmt::{uWrite, uwrite};
 use web_sys::Node;
 
 use crate::{
-    batch::{Batch, Op},
+    batch::{Batch, FinalizedBatch, Op},
     last_needs_memory, update_last_memory, work_last_created, ElementBuilder, IntoAttribue,
     IntoElement, JsInterpreter, MSG_METADATA_PTR, MSG_PTR_PTR, STR_LEN_PTR, STR_PTR_PTR,
 };
@@ -78,40 +78,9 @@ impl MsgChannel {
     }
 
     /// Exicutes any queued operations in the order they were added
-    #[inline]
     pub fn flush(&mut self) {
-        debug_assert_eq!(0usize.to_le_bytes().len(), 32 / 8);
         self.batch.encode_op(Op::Stop);
-        let msg_ptr = self.batch.msg.as_ptr() as usize;
-        // the pointer will only be updated when the message vec is resized, so we have a flag to check if the pointer has changed to avoid unnecessary decoding
-        if unsafe { *MSG_PTR_PTR } != msg_ptr || unsafe { *MSG_METADATA_PTR } == 255 {
-            unsafe {
-                let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_PTR_PTR);
-                *mut_ptr_ptr = msg_ptr;
-                let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
-                *mut_ptr_ptr = 1;
-            }
-        } else {
-            unsafe {
-                let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
-                *mut_ptr_ptr = 0;
-            }
-        }
-        unsafe {
-            let mut_str_ptr_ptr: *mut usize = std::mem::transmute(STR_PTR_PTR);
-            *mut_str_ptr_ptr = self.batch.str_buf.as_ptr() as usize;
-            let mut_str_len_ptr: *mut usize = std::mem::transmute(STR_LEN_PTR);
-            *mut_str_len_ptr = self.batch.str_buf.len() as usize;
-            let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
-            *mut_ptr_ptr |= (!self.batch.str_buf.is_empty() as usize) << 1;
-            if *mut_str_len_ptr < 100 {
-                *mut_ptr_ptr |= (self.batch.str_buf.is_ascii() as usize) << 2;
-            }
-        }
-        if last_needs_memory() {
-            update_last_memory(wasm_bindgen::memory());
-        }
-        work_last_created();
+        run_batch(&self.batch.msg, &self.batch.str_buf);
         self.batch.msg.clear();
         self.batch.current_op_batch_idx = 0;
         self.batch.current_op_byte_idx = 3;
@@ -247,6 +216,45 @@ impl MsgChannel {
     pub fn append(&mut self, batch: Batch) {
         self.batch.append(batch);
     }
+
+    /// Run a batch of operations on the DOM immediately. This only runs the operations that are in the batch, not the operations that are queued in the [`MsgChannel`].
+    pub fn run_batch(&mut self, batch: &FinalizedBatch) {
+        run_batch(&batch.msg, &batch.str);
+    }
+}
+
+fn run_batch(msg: &[u8], str_buf: &[u8]) {
+    debug_assert_eq!(0usize.to_le_bytes().len(), 32 / 8);
+    let msg_ptr = msg.as_ptr() as usize;
+    // the pointer will only be updated when the message vec is resized, so we have a flag to check if the pointer has changed to avoid unnecessary decoding
+    if unsafe { *MSG_PTR_PTR } != msg_ptr || unsafe { *MSG_METADATA_PTR } == 255 {
+        unsafe {
+            let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_PTR_PTR);
+            *mut_ptr_ptr = msg_ptr;
+            let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
+            *mut_ptr_ptr = 1;
+        }
+    } else {
+        unsafe {
+            let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
+            *mut_ptr_ptr = 0;
+        }
+    }
+    unsafe {
+        let mut_str_ptr_ptr: *mut usize = std::mem::transmute(STR_PTR_PTR);
+        *mut_str_ptr_ptr = str_buf.as_ptr() as usize;
+        let mut_str_len_ptr: *mut usize = std::mem::transmute(STR_LEN_PTR);
+        *mut_str_len_ptr = str_buf.len() as usize;
+        let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
+        *mut_ptr_ptr |= (!str_buf.is_empty() as usize) << 1;
+        if *mut_str_len_ptr < 100 {
+            *mut_ptr_ptr |= (str_buf.is_ascii() as usize) << 2;
+        }
+    }
+    if last_needs_memory() {
+        update_last_memory(wasm_bindgen::memory());
+    }
+    work_last_created();
 }
 
 /// Something that can be written as a utf-8 string to a buffer
