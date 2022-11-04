@@ -82,7 +82,7 @@ impl Default for Batch {
         Self {
             msg: Vec::new(),
             str_buf: Vec::new(),
-            current_op_byte_idx: 4,
+            current_op_byte_idx: 3,
             current_op_bit_pack_index: 0,
             current_op_batch_idx: 0,
         }
