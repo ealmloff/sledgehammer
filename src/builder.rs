@@ -8,6 +8,8 @@ use crate::{
     IntoAttribue, JsInterpreter, MSG_METADATA_PTR, MSG_PTR_PTR, STR_LEN_PTR, STR_PTR_PTR,
 };
 
+static mut INTERPRETER_EXISTS: bool = false;
+
 /// An id that may be either the last node or a node with an assigned id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MaybeId {
@@ -24,6 +26,7 @@ pub struct NodeId(pub u32);
 
 /// The [`MsgChannel`] handles communication with the dom. It allows you to send batched operations to the dom.
 /// All of the functions that are not marked otherwise are qued and not exicuted imidately. When you want to exicute the que you have to call [`MsgChannel::flush`].
+/// There should only be one msg channel per program.
 pub struct MsgChannel {
     pub(crate) msg: Vec<u8>,
     pub(crate) str_buf: Vec<u8>,
@@ -36,6 +39,13 @@ pub struct MsgChannel {
 impl MsgChannel {
     /// Create a MsgChannel with the specified Vecs and root element
     fn with(v: Vec<u8>, v2: Vec<u8>) -> Self {
+        unsafe {
+            assert!(
+                !INTERPRETER_EXISTS,
+                "Found another MsgChannel. Only one MsgChannel can be created"
+            );
+            INTERPRETER_EXISTS = true;
+        }
         assert!(0x1F > Op::CloneNodeChildren as u8);
         format!(
             "init: {:?}, {:?}, {:?}",
