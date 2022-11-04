@@ -183,13 +183,13 @@ impl MsgChannel {
     }
 
     /// Insert a number of nodes after a given node.
-    pub fn insert_nodes_after(&mut self, root: MaybeId, nodes: Vec<NodeId>) {
+    pub fn insert_nodes_after(&mut self, root: MaybeId, nodes: &[NodeId]) {
         self.encode_op(Op::InsertAfter);
         self.encode_maybe_id(root);
         self.encode_bool(true);
         self.encode_u32(nodes.len() as u32);
         for node in nodes {
-            self.encode_id(node);
+            self.encode_id(*node);
         }
     }
 
@@ -202,13 +202,13 @@ impl MsgChannel {
     }
 
     /// Insert a number of nodes before a given node.
-    pub fn insert_nodes_before(&mut self, root: MaybeId, nodes: Vec<NodeId>) {
+    pub fn insert_nodes_before(&mut self, root: MaybeId, nodes: &[NodeId]) {
         self.encode_op(Op::InsertBefore);
         self.encode_maybe_id(root);
         self.encode_bool(true);
         self.encode_u32(nodes.len() as u32);
         for node in nodes {
-            self.encode_id(node);
+            self.encode_id(*node);
         }
     }
 
@@ -240,9 +240,9 @@ impl MsgChannel {
     }
 
     /// Set the value of a node's attribute.
-    pub fn set_attribute<A: IntoAttribue>(
+    pub fn set_attribute(
         &mut self,
-        attr: A,
+        attr: impl IntoAttribue,
         value: impl WritableText,
         root: MaybeId,
     ) {
@@ -253,7 +253,7 @@ impl MsgChannel {
     }
 
     /// Remove an attribute from a node.
-    pub fn remove_attribute<A: IntoAttribue>(&mut self, attr: A, root: MaybeId) {
+    pub fn remove_attribute(&mut self, attr: impl IntoAttribue, root: MaybeId) {
         self.encode_op(Op::RemoveAttribute);
         self.encode_maybe_id(root);
         attr.encode(self);
@@ -436,7 +436,7 @@ impl MsgChannel {
             }
             self.current_op_bit_pack_index += 1;
         } else {
-            todo!("handle more than 2 bools in a op");
+            todo!("handle more than 3 bools in a op");
         }
     }
 
