@@ -131,6 +131,7 @@ impl<'a, 'b> IntoAttribue<'a, 'b> for InNamespace<'a, &'b str> {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum Attribute {
     accept_charset,
     accept,

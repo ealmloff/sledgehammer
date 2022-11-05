@@ -1,4 +1,129 @@
-use crate::{builder::MaybeId, ElementBuilder, IntoAttribue, IntoElement, NodeId, WritableText};
+use crate::{
+    builder::MaybeId, Attribute, Element, ElementBuilder, IntoAttribue, IntoElement, NodeId,
+    WritableText,
+};
+use farmhash::FarmHasher;
+use lru::LruCache;
+use once_cell::sync::Lazy;
+use std::{
+    collections::{HashMap, HashSet},
+    hash::{BuildHasher, Hasher},
+    num::NonZeroUsize,
+    sync::Mutex,
+};
+
+static STRING_CACHE: Lazy<Mutex<StringCache>> = {
+    Lazy::new(|| {
+        let mut free_ids = HashSet::default();
+        for i in 0..STRING_CACHE_SIZE.get() {
+            free_ids.insert(i as u8);
+        }
+        Mutex::new(StringCache {
+            cache: HashMap::with_hasher(SIMDHashBuilder::default()),
+            free_ids,
+        })
+    })
+};
+
+const STRING_CACHE_SIZE: NonZeroUsize = {
+    let max_attr = Attribute::wrap as usize;
+    let max_elem = Element::xmp as usize;
+    if max_attr > max_elem {
+        if let Some(u) = NonZeroUsize::new(255 - max_attr) {
+            u
+        } else {
+            panic!("max_elem is 0")
+        }
+    } else if let Some(u) = NonZeroUsize::new(255 - max_elem) {
+        u
+    } else {
+        panic!("max_elem is 0")
+    }
+};
+
+struct StringCache {
+    cache: HashMap<Vec<u8>, u8, SIMDHashBuilder>,
+    free_ids: HashSet<u8>,
+}
+
+enum CacheResult {
+    Found(u8),
+    New(u8),
+}
+
+impl StringCache {
+    fn get(&mut self, s: &[u8]) -> u8 {
+        if let Some(id) = self.cache.get(s) {
+            *id
+        } else {
+            let id = *self.free_ids.iter().next().unwrap();
+            self.free_ids.remove(&id);
+            if self.cache.len() == STRING_CACHE_SIZE.get() {
+                todo!();
+                if let Some((s, id)) = self.cache.iter().next() {
+                    self.free_ids.insert(*id);
+                    self.cache.remove_entry(&s.clone());
+                }
+            }
+            self.cache.insert(s.to_vec(), id);
+            id
+        }
+    }
+}
+
+fn get_string_cache_id(s: &[u8]) -> CacheResult {
+    let mut cache = STRING_CACHE.lock().unwrap();
+    if let Some(id) = cache.cache.get(s) {
+        CacheResult::Found(*id)
+    } else {
+        CacheResult::New(cache.get(s))
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct SIMDHashBuilder;
+
+impl BuildHasher for SIMDHashBuilder {
+    type Hasher = SIMDHasher;
+
+    fn build_hasher(&self) -> Self::Hasher {
+        SIMDHasher(0)
+    }
+}
+
+pub(crate) struct SIMDHasher(u32);
+
+impl Hasher for SIMDHasher {
+    fn finish(&self) -> u64 {
+        self.0 as u64
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        const H: u32 = 2166136261;
+        const W: u32 = 16777619;
+        #[cfg(all(target_family = "wasm", target_feature = "simd128"))]
+        {
+            const M: core::arch::wasm32::v128 = core::arch::wasm32::u32x4(H, H, H, H);
+            const N: core::arch::wasm32::v128 = core::arch::wasm32::u32x4(W, W, W, W);
+            let h = bytes.chunks_exact(4).fold(M, |h, c| {
+                let packed =
+                    core::arch::wasm32::u32x4(c[0] as u32, c[1] as u32, c[2] as u32, c[3] as u32);
+                core::arch::wasm32::v128_xor(core::arch::wasm32::u32x4_mul(h, N), packed)
+            });
+            let remaining = [
+                core::arch::wasm32::u32x4_extract_lane::<0>(h),
+                core::arch::wasm32::u32x4_extract_lane::<1>(h),
+                core::arch::wasm32::u32x4_extract_lane::<2>(h),
+                core::arch::wasm32::u32x4_extract_lane::<3>(h),
+            ];
+            *self = Self(remaining.iter().fold(H, |h, b| (h * W) ^ (*b as u32)));
+        }
+        #[cfg(not(all(target_family = "wasm", target_feature = "simd128")))]
+        {
+            *self = Self(bytes.iter().fold(H, |h, b| (h * W) ^ (*b as u32)));
+        }
+    }
+}
 
 // operations that have no booleans can be encoded as a half byte, these are placed first
 pub(crate) enum Op {
@@ -361,10 +486,42 @@ impl Batch {
 
     #[inline]
     pub(crate) fn encode_str(&mut self, string: impl WritableText) {
-        let prev_len = self.str_buf.len();
-        string.write_as_text(&mut self.str_buf);
-        let len = self.str_buf.len() - prev_len;
-        self.encode_u16(len as u16);
+        if let Some(s) = string.as_str() {
+            match get_string_cache_id(s.as_bytes()) {
+                CacheResult::Found(id) => {
+                    self.encode_bool(true);
+                    self.msg.push(id);
+                }
+                CacheResult::New(id) => {
+                    self.encode_bool(false);
+                    self.msg.push(id);
+                    self.encode_u16(s.len() as u16);
+                    string.write_as_text(&mut self.str_buf);
+                }
+            }
+        } else {
+            let prev_len = self.str_buf.len();
+            string.write_as_text(&mut self.str_buf);
+            let byte_arr = &self.str_buf[prev_len..];
+            match get_string_cache_id(byte_arr) {
+                CacheResult::Found(id) => {
+                    // self.encode_bool(true);
+                    // self.msg.push(id);
+                    // // cut off the string
+                    // self.str_buf.truncate(prev_len);
+                    self.encode_bool(false);
+                    self.msg.push(id);
+                    let len = self.str_buf.len() - prev_len;
+                    self.encode_u16(len as u16);
+                }
+                CacheResult::New(id) => {
+                    self.encode_bool(false);
+                    self.msg.push(id);
+                    let len = self.str_buf.len() - prev_len;
+                    self.encode_u16(len as u16);
+                }
+            }
+        }
     }
 
     pub(crate) fn encode_cachable_str(&mut self, string: impl WritableText) {
@@ -398,7 +555,7 @@ impl Batch {
 
     #[inline]
     pub(crate) fn encode_bool(&mut self, value: bool) {
-        if self.current_op_bit_pack_index < 3 {
+        if self.current_op_bit_pack_index < 4 {
             if value {
                 self.msg[self.current_op_byte_idx] |= 1 << (self.current_op_bit_pack_index + 5);
             }

@@ -153,6 +153,7 @@ impl<'a> ElementBuilder<'a> {
 
 /// All built-in elements
 #[allow(unused)]
+#[derive(Clone, Copy)]
 pub enum Element {
     a,
     abbr,

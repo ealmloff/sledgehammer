@@ -1,4 +1,5 @@
-let op, len, ns, attr, i, value, element, ptr, pos, end, out, char, numAttributes, endRounded, inptr, buffer, metadata, parent, children, node, name, id, nodes;
+let op, len, ns, attr, i, value, element, ptr, pos, end, out, char, numAttributes, endRounded, inptr, buffer, metadata, parent, children, node, name, id, nodes,
+    stringCache = [];
 
 export function work_last_created() {
     inptr.Work();
@@ -176,8 +177,17 @@ function exOp() {
             if (op & 0x20) {
                 id = inptr.view.getUint32(inptr.u8BufPos, true);
                 inptr.u8BufPos += 4;
-                inptr.nodes[id].textContent = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true));
-                inptr.u8BufPos += 2;
+                // cachable
+                if (op & 0x40) {
+                    inptr.nodes[id].textContent = stringCache[inptr.view.getUint8(inptr.u8BufPos++, true)];
+                }
+                else {
+                    const stringId = inptr.view.getUint8(inptr.u8BufPos++, true),
+                        str = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true));
+                    inptr.u8BufPos += 2;
+                    stringCache[stringId] = str;
+                    inptr.nodes[id].textContent = str;
+                }
             }
             else {
                 inptr.lastNode.textContent = inptr.strings.substring(inptr.strPos, inptr.strPos += inptr.view.getUint16(inptr.u8BufPos, true));

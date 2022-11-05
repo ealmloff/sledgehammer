@@ -260,11 +260,19 @@ fn run_batch(msg: &[u8], str_buf: &[u8]) {
 /// Something that can be written as a utf-8 string to a buffer
 pub trait WritableText {
     fn write_as_text(self, to: &mut Vec<u8>);
+
+    fn as_str(&self) -> Option<&str> {
+        None
+    }
 }
 
 impl<'a> WritableText for &'a str {
     fn write_as_text(self, to: &mut Vec<u8>) {
         to.extend_from_slice(self.as_bytes());
+    }
+
+    fn as_str(&self) -> Option<&str> {
+        Some(self)
     }
 }
 
@@ -356,11 +364,13 @@ impl WritableText for isize {
     }
 }
 
-impl<F> WritableText for F
+pub struct CustomFn<F: FnOnce(WritableVecWrapper)>(pub F);
+
+impl<F> WritableText for CustomFn<F>
 where
     F: FnOnce(WritableVecWrapper),
 {
     fn write_as_text(self, to: &mut Vec<u8>) {
-        self(WritableVecWrapper(to));
+        self.0(WritableVecWrapper(to));
     }
 }
