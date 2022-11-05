@@ -139,12 +139,13 @@ impl<'a> ElementBuilder<'a> {
     pub(crate) fn encode(&self, v: &mut Batch) {
         v.encode_optional_id_with_byte_bool(self.id);
         self.kind.encode(v);
+        // these are packed together so they can be read as a u16
         v.msg.push(self.attrs.len() as u8);
+        v.msg.push(self.children.len() as u8);
         for (attr, value) in self.attrs {
             attr.encode_u8_discriminant(v);
             v.encode_str(*value);
         }
-        v.msg.push(self.children.len() as u8);
         for child in self.children {
             child.encode(v);
         }
@@ -153,6 +154,7 @@ impl<'a> ElementBuilder<'a> {
 
 /// All built-in elements
 #[allow(unused)]
+#[derive(Copy, Clone)]
 pub enum Element {
     a,
     abbr,
