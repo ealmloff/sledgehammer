@@ -1,6 +1,5 @@
-use std::{convert::Infallible, fmt::Arguments, io::Write};
+use std::{fmt::Arguments, io::Write};
 
-use ufmt::{uWrite, uwrite};
 use web_sys::Node;
 
 use crate::{
@@ -226,29 +225,58 @@ impl MsgChannel {
 fn run_batch(msg: &[u8], str_buf: &[u8]) {
     debug_assert_eq!(0usize.to_le_bytes().len(), 32 / 8);
     let msg_ptr = msg.as_ptr() as usize;
+    let str_ptr = str_buf.as_ptr() as usize;
     // the pointer will only be updated when the message vec is resized, so we have a flag to check if the pointer has changed to avoid unnecessary decoding
-    if unsafe { *MSG_PTR_PTR } != msg_ptr || unsafe { *MSG_METADATA_PTR } == 255 {
+    if unsafe { *MSG_METADATA_PTR } == 255 {
+        // this is the first message, so we need to encode all the metadata
         unsafe {
             let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_PTR_PTR);
             *mut_ptr_ptr = msg_ptr;
-            let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
-            *mut_ptr_ptr = 1;
+            let mut_metadata_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
+            // the first bit encodes if the msg pointer has changed
+            *mut_metadata_ptr = 1;
+            let mut_str_ptr_ptr: *mut usize = std::mem::transmute(STR_PTR_PTR);
+            *mut_str_ptr_ptr = str_ptr as usize;
+            // the second bit encodes if the str pointer has changed
+            *mut_metadata_ptr |= 2;
         }
     } else {
-        unsafe {
-            let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
-            *mut_ptr_ptr = 0;
+        if unsafe { *MSG_PTR_PTR } != msg_ptr {
+            unsafe {
+                let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_PTR_PTR);
+                *mut_ptr_ptr = msg_ptr;
+                let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
+                // the first bit encodes if the msg pointer has changed
+                *mut_ptr_ptr = 1;
+            }
+        } else {
+            unsafe {
+                let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
+                // the first bit encodes if the msg pointer has changed
+                *mut_ptr_ptr = 0;
+            }
+        }
+        if unsafe { *STR_PTR_PTR } != str_ptr {
+            unsafe {
+                let mut_str_ptr_ptr: *mut usize = std::mem::transmute(STR_PTR_PTR);
+                *mut_str_ptr_ptr = str_ptr as usize;
+                let mut_metadata_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
+                // the second bit encodes if the str pointer has changed
+                *mut_metadata_ptr |= 1 << 1;
+            }
         }
     }
     unsafe {
-        let mut_str_ptr_ptr: *mut usize = std::mem::transmute(STR_PTR_PTR);
-        *mut_str_ptr_ptr = str_buf.as_ptr() as usize;
-        let mut_str_len_ptr: *mut usize = std::mem::transmute(STR_LEN_PTR);
-        *mut_str_len_ptr = str_buf.len() as usize;
-        let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
-        *mut_ptr_ptr |= (!str_buf.is_empty() as usize) << 1;
-        if *mut_str_len_ptr < 100 {
-            *mut_ptr_ptr |= (str_buf.is_ascii() as usize) << 2;
+        let mut_metadata_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
+        if !str_buf.is_empty() {
+            // the third bit encodes if there is any strings
+            *mut_metadata_ptr |= 1 << 2;
+            let mut_str_len_ptr: *mut usize = std::mem::transmute(STR_LEN_PTR);
+            *mut_str_len_ptr = str_buf.len() as usize;
+            if *mut_str_len_ptr < 100 {
+                // the fourth bit encodes if the strings are entirely ascii and small
+                *mut_metadata_ptr |= (str_buf.is_ascii() as usize) << 3;
+            }
         }
     }
     if last_needs_memory() {
@@ -262,9 +290,25 @@ pub trait WritableText {
     fn write_as_text(self, to: &mut Vec<u8>);
 }
 
-impl<'a> WritableText for &'a str {
+impl WritableText for char {
     fn write_as_text(self, to: &mut Vec<u8>) {
-        to.extend_from_slice(self.as_bytes());
+        to.push(self as u8);
+    }
+}
+
+impl<'a> WritableText for &'a str {
+    #[inline(always)]
+    fn write_as_text(self, to: &mut Vec<u8>) {
+        let old_len = to.len();
+        let len = self.len();
+        to.reserve(len);
+        #[allow(clippy::uninit_vec)]
+        unsafe {
+            for o in 0..len {
+                *to.as_mut_ptr().add(old_len + o) = *self.as_ptr().add(o);
+            }
+            to.set_len(old_len + len);
+        }
     }
 }
 
@@ -274,93 +318,110 @@ impl WritableText for Arguments<'_> {
     }
 }
 
-/// A wrapper around a `Vec<u8>` that can implement `Writable`
-pub struct WritableVecWrapper<'a>(&'a mut Vec<u8>);
-
-impl uWrite for WritableVecWrapper<'_> {
-    type Error = Infallible;
-
-    fn write_str(&mut self, s: &str) -> Result<(), Self::Error> {
-        self.0.extend_from_slice(s.as_bytes());
-        Ok(())
-    }
-}
-
-impl WritableText for u8 {
-    fn write_as_text(self, to: &mut Vec<u8>) {
-        let mut v = WritableVecWrapper(to);
-        let _ = uwrite!(v, "{}", self);
-    }
-}
-
-impl WritableText for u16 {
-    fn write_as_text(self, to: &mut Vec<u8>) {
-        let mut v = WritableVecWrapper(to);
-        let _ = uwrite!(v, "{}", self);
-    }
-}
-
-impl WritableText for u32 {
-    fn write_as_text(self, to: &mut Vec<u8>) {
-        let mut v = WritableVecWrapper(to);
-        let _ = uwrite!(v, "{}", self);
-    }
-}
-
-impl WritableText for u64 {
-    fn write_as_text(self, to: &mut Vec<u8>) {
-        let mut v = WritableVecWrapper(to);
-        let _ = uwrite!(v, "{}", self);
-    }
-}
-
-impl WritableText for usize {
-    fn write_as_text(self, to: &mut Vec<u8>) {
-        let mut v = WritableVecWrapper(to);
-        let _ = uwrite!(v, "{}", self);
-    }
-}
-
-impl WritableText for i8 {
-    fn write_as_text(self, to: &mut Vec<u8>) {
-        let mut v = WritableVecWrapper(to);
-        let _ = uwrite!(v, "{}", self);
-    }
-}
-
-impl WritableText for i16 {
-    fn write_as_text(self, to: &mut Vec<u8>) {
-        let mut v = WritableVecWrapper(to);
-        let _ = uwrite!(v, "{}", self);
-    }
-}
-
-impl WritableText for i32 {
-    fn write_as_text(self, to: &mut Vec<u8>) {
-        let mut v = WritableVecWrapper(to);
-        let _ = uwrite!(v, "{}", self);
-    }
-}
-
-impl WritableText for i64 {
-    fn write_as_text(self, to: &mut Vec<u8>) {
-        let mut v = WritableVecWrapper(to);
-        let _ = uwrite!(v, "{}", self);
-    }
-}
-
-impl WritableText for isize {
-    fn write_as_text(self, to: &mut Vec<u8>) {
-        let mut v = WritableVecWrapper(to);
-        let _ = uwrite!(v, "{}", self);
-    }
-}
-
 impl<F> WritableText for F
 where
-    F: FnOnce(WritableVecWrapper),
+    F: FnOnce(&mut Vec<u8>),
 {
     fn write_as_text(self, to: &mut Vec<u8>) {
-        self(WritableVecWrapper(to));
+        self(to);
     }
 }
+
+macro_rules! write_unsized {
+    ($t: ty) => {
+        impl WritableText for $t {
+            fn write_as_text(self, to: &mut Vec<u8>) {
+                let mut n = self;
+                let mut n2 = n;
+                let mut num_digits = 0;
+                while n2 > 0 {
+                    n2 /= 10;
+                    num_digits += 1;
+                }
+                let len = num_digits;
+                to.reserve(len);
+                let ptr = to.as_mut_ptr().cast::<u8>();
+                let old_len = to.len();
+                let mut i = len - 1;
+                loop {
+                    unsafe { ptr.add(old_len + i).write((n % 10) as u8 + b'0') }
+                    n /= 10;
+
+                    if n == 0 {
+                        break;
+                    } else {
+                        i -= 1;
+                    }
+                }
+
+                #[allow(clippy::uninit_vec)]
+                unsafe {
+                    to.set_len(old_len + (len - i));
+                }
+            }
+        }
+    };
+}
+
+macro_rules! write_sized {
+    ($t: ty) => {
+        impl WritableText for $t {
+            fn write_as_text(self, to: &mut Vec<u8>) {
+                let neg = self < 0;
+                let mut n = if neg {
+                    match self.checked_abs() {
+                        Some(n) => n,
+                        None => <$t>::MAX / 2 + 1,
+                    }
+                } else {
+                    self
+                };
+                let mut n2 = n;
+                let mut num_digits = 0;
+                while n2 > 0 {
+                    n2 /= 10;
+                    num_digits += 1;
+                }
+                let len = if neg { num_digits + 1 } else { num_digits };
+                to.reserve(len);
+                let ptr = to.as_mut_ptr().cast::<u8>();
+                let old_len = to.len();
+                let mut i = len - 1;
+                loop {
+                    unsafe { ptr.add(old_len + i).write((n % 10) as u8 + b'0') }
+                    n /= 10;
+
+                    if n == 0 {
+                        break;
+                    } else {
+                        i -= 1;
+                    }
+                }
+
+                if neg {
+                    i -= 1;
+                    unsafe { ptr.add(i).write(b'-') }
+                }
+
+                #[allow(clippy::uninit_vec)]
+                unsafe {
+                    to.set_len(old_len + (len - i));
+                }
+            }
+        }
+    };
+}
+
+write_unsized!(u8);
+write_unsized!(u16);
+write_unsized!(u32);
+write_unsized!(u64);
+write_unsized!(u128);
+write_unsized!(usize);
+
+write_sized!(i8);
+write_sized!(i16);
+write_sized!(i32);
+write_sized!(i64);
+write_sized!(i128);
+write_sized!(isize);
