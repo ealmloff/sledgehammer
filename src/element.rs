@@ -47,6 +47,7 @@ impl<'a, 'b> Element {
 }
 
 impl<'a, 'b> IntoElement<'a, 'b> for Element {
+    #[inline(always)]
     fn encode(&self, v: &mut Batch) {
         v.msg.push(*self as u8);
     }

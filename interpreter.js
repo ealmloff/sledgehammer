@@ -338,6 +338,7 @@ export class JsInterpreter {
         this.parents = [];
         this.UpdateMemory(mem);
         this.last_start_pos;
+        this.last_str_start;
         this.metadata_ptr = _metadata_ptr;
         this.ptr_ptr = _ptr_ptr;
         this.str_ptr_ptr = _str_ptr_ptr;
@@ -364,21 +365,40 @@ export class JsInterpreter {
             this.last_start_pos = this.view.getUint32(this.ptr_ptr, true);
         }
         this.u8BufPos = this.last_start_pos;
-        if (metadata & 0x02) {
+        if (metadata & 0x04) {
             len = this.view.getUint32(this.str_len_ptr, true);
-            ptr = this.view.getUint32(this.str_ptr_ptr, true);
+            if (metadata & 0x02) {
+                this.last_str_start = this.view.getUint32(this.str_ptr_ptr, true);
+            }
             // for small strings decoding them in javascript to avoid the overhead of native calls is faster
-            if (len < 100) {
-                // the fourth boolean contains information about whether the string is all ascii or utf8
-                if (metadata & 0x04) {
-                    this.strings = this.batchedAsciiDecode(ptr, len);
+            // the fourth boolean contains information about whether the string is all ascii or utf8 and small
+            if (metadata & 0x08) {
+                pos = this.last_str_start;
+                this.strings = "";
+                endRounded = pos + ((len / 4) | 0) * 4;
+                while (pos < endRounded) {
+                    char = this.view.getUint32(pos);
+                    this.strings += String.fromCharCode(char >> 24, (char & 0x00FF0000) >> 16, (char & 0x0000FF00) >> 8, (char & 0x000000FF));
+                    pos += 4;
                 }
-                else {
-                    this.strings = this.utf8Decode(ptr, len);
+                switch (this.last_str_start + len - pos) {
+                    case 3:
+                        char = this.view.getUint32(pos);
+                        this.strings += String.fromCharCode(char >> 24, (char & 0x00FF0000) >> 16, (char & 0x0000FF00) >> 8);
+                        break;
+                    case 2:
+                        char = this.view.getUint16(pos);
+                        this.strings += String.fromCharCode(char >> 8, char & 0xFF);
+                        break;
+                    case 1:
+                        this.strings += String.fromCharCode(this.view.getUint8(pos));
+                        break;
+                    case 0:
+                        break;
                 }
             }
             else {
-                this.strings = this.decoder.decode(new DataView(this.view.buffer, ptr, len));
+                this.strings = this.decoder.decode(new DataView(this.view.buffer, this.last_str_start, len));
             }
             this.strPos = 0;
         }
@@ -507,54 +527,6 @@ export class JsInterpreter {
 
     GetNode(id) {
         return this.nodes[id];
-    }
-
-    utf8Decode(start, byteLength) {
-        pos = start;
-        end = pos + byteLength;
-        out = "";
-        while (pos < end) {
-            char = this.view.getUint8(pos++);
-            if ((char & 0x80) === 0) {
-                // 1 byte
-                out += String.fromCharCode(char);
-            } else if ((char & 0xe0) === 0xc0) {
-                // 2 bytes
-                out += String.fromCharCode(((char & 0x1f) << 6) | (this.view.getUint8(pos++) & 0x3f));
-            } else if ((char & 0xf0) === 0xe0) {
-                // 3 bytes
-                out += String.fromCharCode(((char & 0x1f) << 12) | ((this.view.getUint8(pos++) & 0x3f) << 6) | (this.view.getUint8(pos++) & 0x3f));
-            } else if ((char & 0xf8) === 0xf0) {
-                // 4 bytes
-                let unit = ((char & 0x07) << 0x12) | ((this.view.getUint8(pos++) & 0x3f) << 0x0c) | ((this.view.getUint8(pos++) & 0x3f) << 0x06) | (this.view.getUint8(pos++) & 0x3f);
-                if (unit > 0xffff) {
-                    unit -= 0x10000;
-                    out += String.fromCharCode(((unit >>> 10) & 0x3ff) | 0xd800);
-                    unit = 0xdc00 | (unit & 0x3ff);
-                }
-                out += String.fromCharCode(unit);
-            } else {
-                out += String.fromCharCode(char);
-            }
-        }
-
-        return out;
-    }
-
-    batchedAsciiDecode(start, byteLength) {
-        pos = start;
-        end = pos + byteLength;
-        out = "";
-        endRounded = pos + ((byteLength / 4) | 0) * 4;
-        while (pos < endRounded) {
-            char = this.view.getUint32(pos);
-            out += String.fromCharCode(char >> 24, (char & 0x00FF0000) >> 16, (char & 0x0000FF00) >> 8, (char & 0x000000FF));
-            pos += 4;
-        }
-        while (pos < end) {
-            out += String.fromCharCode(this.view.getUint8(pos++));
-        }
-        return out;
     }
 }
 

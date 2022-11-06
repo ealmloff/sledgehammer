@@ -1,3 +1,5 @@
+use web_sys::console;
+
 use crate::{builder::MaybeId, ElementBuilder, IntoAttribue, IntoElement, NodeId, WritableText};
 
 // operations that have no booleans can be encoded as a half byte, these are placed first
@@ -380,7 +382,9 @@ impl Batch {
 
         self.current_op_byte_idx += 1;
         if self.current_op_byte_idx - self.current_op_batch_idx < 4 {
-            self.msg[self.current_op_byte_idx] = u8_op;
+            unsafe {
+                *self.msg.get_unchecked_mut(self.current_op_byte_idx) = u8_op;
+            }
         } else {
             self.current_op_batch_idx = self.msg.len();
             self.current_op_byte_idx = self.current_op_batch_idx;
@@ -390,8 +394,8 @@ impl Batch {
                 let len = self.msg.len();
                 self.msg.reserve(4);
                 self.msg.set_len(len + 4);
+                *self.msg.get_unchecked_mut(self.current_op_batch_idx) = u8_op;
             }
-            self.msg[self.current_op_batch_idx] = u8_op;
         }
         self.current_op_bit_pack_index = 0;
     }
@@ -400,7 +404,10 @@ impl Batch {
     pub(crate) fn encode_bool(&mut self, value: bool) {
         if self.current_op_bit_pack_index < 3 {
             if value {
-                self.msg[self.current_op_byte_idx] |= 1 << (self.current_op_bit_pack_index + 5);
+                unsafe {
+                    *self.msg.get_unchecked_mut(self.current_op_byte_idx) |=
+                        1 << (self.current_op_bit_pack_index + 5);
+                }
             }
             self.current_op_bit_pack_index += 1;
         } else {
