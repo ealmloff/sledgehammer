@@ -56,19 +56,8 @@ function exOp() {
             else {
                 parent = inptr.lastNode;
             }
-            // the second bool is encoded as op & (1 << 6)
-            // second bool encodes if there are many children
-            if (op & 0x40) {
-                len = inptr.decodeU32();
-                for (i = 0; i < len; i++) {
-                    parent.appendChild(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
-                    inptr.u8BufPos += 4;
-                }
-            }
-            else {
-                parent.appendChild(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
-                inptr.u8BufPos += 4;
-            }
+            parent.appendChild(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
+            inptr.u8BufPos += 4;
             break;
         // replace with
         case 8:
@@ -80,19 +69,8 @@ function exOp() {
             else {
                 parent = inptr.lastNode;
             }
-            if (op & 0x40) {
-                len = inptr.decodeU32();
-                children = [];
-                for (i = 0; i < len; i++) {
-                    children.push(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
-                    inptr.u8BufPos += 4;
-                }
-                parent.replaceWith(...children);
-            }
-            else {
-                parent.replaceWith(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
-                inptr.u8BufPos += 4;
-            }
+            parent.replaceWith(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
+            inptr.u8BufPos += 4;
             break;
         // insert after
         case 9:
@@ -104,18 +82,8 @@ function exOp() {
             else {
                 parent = inptr.lastNode;
             }
-            if (op & 0x40) {
-                len = inptr.decodeU32();
-                children = [];
-                for (i = 0; i < len; i++) {
-                    children.push(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
-                    inptr.u8BufPos += 4;
-                }
-                parent.after(...children);
-            } else {
-                parent.after(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
-                inptr.u8BufPos += 4;
-            }
+            parent.after(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
+            inptr.u8BufPos += 4;
             break;
         // insert before
         case 10:
@@ -127,18 +95,8 @@ function exOp() {
             else {
                 parent = inptr.lastNode;
             }
-            if (op & 0x40) {
-                len = inptr.decodeU32();
-                children = [];
-                for (i = 0; i < len; i++) {
-                    children.push(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
-                    inptr.u8BufPos += 4;
-                }
-                parent.before(...children);
-            } else {
-                parent.before(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
-                inptr.u8BufPos += 4;
-            }
+            parent.before(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
+            inptr.u8BufPos += 4;
             break;
         // remove
         case 11:
@@ -307,23 +265,6 @@ function exOp() {
             if (op & 0x40) {
                 inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)] = inptr.lastNode;
                 inptr.u8BufPos += 4;
-            }
-            break;
-        // clone node children
-        case 20:
-            // the first bool is encoded as op & (1 << 5)
-            if (op & 0x20) {
-                node = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)].cloneNode(true).firstChild;
-                inptr.u8BufPos += 4;
-            }
-            else {
-                node = inptr.lastNode.cloneNode(true).firstChild;
-            }
-            for (; node !== null; node = node.nextSibling) {
-                if (inptr.view.getUint8(inptr.u8BufPos++) === 1) {
-                    inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)] = node;
-                    inptr.u8BufPos += 4;
-                }
             }
             break;
         default:

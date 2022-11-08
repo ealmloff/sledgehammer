@@ -62,11 +62,8 @@ pub(crate) enum Op {
     /// Clones a node.
     CloneNode = 19,
 
-    /// Clones the children of a node. (allows cloning fragments)
-    CloneNodeChildren = 20,
-
     /// Does nothing, but allows us to skip a byte.
-    NoOp = 21,
+    NoOp = 20,
 }
 
 pub struct FinalizedBatch {
@@ -111,19 +108,7 @@ impl Batch {
         self.msg.reserve(size as usize);
         unsafe {
             self.encode_maybe_id_prealloc(root);
-            self.encode_bool(false);
             self.encode_id_prealloc(child);
-        }
-    }
-
-    /// Appends a number of nodes as children of the given node.
-    pub fn append_children(&mut self, root: MaybeId, children: Vec<NodeId>) {
-        self.encode_op(Op::AppendChildren);
-        self.encode_maybe_id(root);
-        self.encode_bool(true);
-        self.encode_u32(children.len() as u32);
-        for child in children {
-            self.encode_id(child);
         }
     }
 
@@ -134,19 +119,7 @@ impl Batch {
         self.msg.reserve(size as usize);
         unsafe {
             self.encode_maybe_id_prealloc(root);
-            self.encode_bool(false);
             self.encode_id_prealloc(node);
-        }
-    }
-
-    /// Replace a node with a number of nodes
-    pub fn replace_with_nodes(&mut self, root: MaybeId, nodes: Vec<NodeId>) {
-        self.encode_op(Op::ReplaceWith);
-        self.encode_maybe_id(root);
-        self.encode_bool(true);
-        self.encode_u32(nodes.len() as u32);
-        for node in nodes {
-            self.encode_id(node);
         }
     }
 
@@ -157,19 +130,7 @@ impl Batch {
         self.msg.reserve(size as usize);
         unsafe {
             self.encode_maybe_id_prealloc(root);
-            self.encode_bool(false);
             self.encode_id_prealloc(node);
-        }
-    }
-
-    /// Insert a number of nodes after a given node.
-    pub fn insert_nodes_after(&mut self, root: MaybeId, nodes: &[NodeId]) {
-        self.encode_op(Op::InsertAfter);
-        self.encode_maybe_id(root);
-        self.encode_bool(true);
-        self.encode_u32(nodes.len() as u32);
-        for node in nodes {
-            self.encode_id(*node);
         }
     }
 
@@ -180,19 +141,7 @@ impl Batch {
         self.msg.reserve(size as usize);
         unsafe {
             self.encode_maybe_id_prealloc(root);
-            self.encode_bool(false);
             self.encode_id_prealloc(node);
-        }
-    }
-
-    /// Insert a number of nodes before a given node.
-    pub fn insert_nodes_before(&mut self, root: MaybeId, nodes: &[NodeId]) {
-        self.encode_op(Op::InsertBefore);
-        self.encode_maybe_id(root);
-        self.encode_bool(true);
-        self.encode_u32(nodes.len() as u32);
-        for node in nodes {
-            self.encode_id(*node);
         }
     }
 
@@ -275,15 +224,6 @@ impl Batch {
         self.msg.reserve(size as usize);
         self.encode_maybe_id(id);
         self.encode_maybe_id(new_id);
-    }
-
-    /// Clone the children of a given node and store them with new ids.
-    pub fn clone_node_children(&mut self, id: MaybeId, new_ids: Vec<NodeId>) {
-        self.encode_op(Op::CloneNodeChildren);
-        self.encode_maybe_id(id);
-        for id in new_ids {
-            self.encode_optional_id_with_byte_bool(Some(id));
-        }
     }
 
     /// Move the last node to the first child
