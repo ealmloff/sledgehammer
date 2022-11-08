@@ -314,11 +314,15 @@ impl<'a> WritableText for &'a str {
         let old_len = to.len();
         #[allow(clippy::uninit_vec)]
         unsafe {
+            let ptr = to.as_mut_ptr();
+            let bytes = self.as_bytes();
+            let str_ptr = bytes.as_ptr();
             for o in 0..len {
-                *to.as_mut_ptr().add(old_len + o) = *self.as_ptr().add(o);
+                *ptr.add(old_len + o) = *str_ptr.add(o);
             }
             to.set_len(old_len + len);
         }
+        // let _ = to.write(self.as_bytes());
     }
 }
 
