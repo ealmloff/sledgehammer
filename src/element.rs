@@ -35,8 +35,23 @@ impl AnyElement<'_, '_> {
 
 /// Anything that can be turned into an element name
 pub trait IntoElement<'a, 'b>: Sealed {
+    const SINGLE_BYTE: bool = false;
+
+    /// Encode the element into the message channel
     fn encode(&self, v: &mut Batch);
 
+    /// Encode the element into the message channel with memory pre-allocated
+    /// # Safety
+    ///
+    /// This is only safe if the batch is preallocated to the correct size
+    unsafe fn encode_prealloc(&self, v: &mut Batch)
+    where
+        Self: Sized,
+    {
+        self.encode(v);
+    }
+
+    /// Turn into an [`AnyElement`]
     fn any_element(self) -> AnyElement<'a, 'b>;
 }
 
@@ -50,6 +65,18 @@ impl<'a, 'b> IntoElement<'a, 'b> for Element {
     #[inline(always)]
     fn encode(&self, v: &mut Batch) {
         v.msg.push(*self as u8);
+    }
+
+    #[inline(always)]
+    unsafe fn encode_prealloc(&self, v: &mut Batch)
+    where
+        Self: Sized,
+    {
+        unsafe {
+            let ptr: *mut u8 = v.msg.as_mut_ptr();
+            *ptr.add(v.msg.len()) = *self as u8;
+            v.msg.set_len(v.msg.len() + 1);
+        }
     }
 
     fn any_element(self) -> AnyElement<'a, 'b> {

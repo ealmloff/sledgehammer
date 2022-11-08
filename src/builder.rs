@@ -19,6 +19,16 @@ pub enum MaybeId {
     Node(NodeId),
 }
 
+impl MaybeId {
+    #[inline(always)]
+    pub(crate) const fn encoded_size(&self) -> u8 {
+        match self {
+            MaybeId::LastNode => 0,
+            MaybeId::Node(_) => 4,
+        }
+    }
+}
+
 /// A node that was created and stored with an id
 /// It is recommended to create and store ids with a slab allocator with an exposed slab index for example the excellent [slab](https://docs.rs/slab) crate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -232,7 +242,7 @@ fn run_batch(msg: &[u8], str_buf: &[u8]) {
         unsafe {
             let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_PTR_PTR);
             *mut_ptr_ptr = msg_ptr;
-            let mut_metadata_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
+            let mut_metadata_ptr: *mut u8 = std::mem::transmute(MSG_METADATA_PTR);
             // the first bit encodes if the msg pointer has changed
             *mut_metadata_ptr = 1;
             let mut_str_ptr_ptr: *mut usize = std::mem::transmute(STR_PTR_PTR);
@@ -245,13 +255,13 @@ fn run_batch(msg: &[u8], str_buf: &[u8]) {
             unsafe {
                 let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_PTR_PTR);
                 *mut_ptr_ptr = msg_ptr;
-                let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
+                let mut_ptr_ptr: *mut u8 = std::mem::transmute(MSG_METADATA_PTR);
                 // the first bit encodes if the msg pointer has changed
                 *mut_ptr_ptr = 1;
             }
         } else {
             unsafe {
-                let mut_ptr_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
+                let mut_ptr_ptr: *mut u8 = std::mem::transmute(MSG_METADATA_PTR);
                 // the first bit encodes if the msg pointer has changed
                 *mut_ptr_ptr = 0;
             }
@@ -260,14 +270,14 @@ fn run_batch(msg: &[u8], str_buf: &[u8]) {
             unsafe {
                 let mut_str_ptr_ptr: *mut usize = std::mem::transmute(STR_PTR_PTR);
                 *mut_str_ptr_ptr = str_ptr as usize;
-                let mut_metadata_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
+                let mut_metadata_ptr: *mut u8 = std::mem::transmute(MSG_METADATA_PTR);
                 // the second bit encodes if the str pointer has changed
                 *mut_metadata_ptr |= 1 << 1;
             }
         }
     }
     unsafe {
-        let mut_metadata_ptr: *mut usize = std::mem::transmute(MSG_METADATA_PTR);
+        let mut_metadata_ptr: *mut u8 = std::mem::transmute(MSG_METADATA_PTR);
         if !str_buf.is_empty() {
             // the third bit encodes if there is any strings
             *mut_metadata_ptr |= 1 << 2;
@@ -275,7 +285,7 @@ fn run_batch(msg: &[u8], str_buf: &[u8]) {
             *mut_str_len_ptr = str_buf.len() as usize;
             if *mut_str_len_ptr < 100 {
                 // the fourth bit encodes if the strings are entirely ascii and small
-                *mut_metadata_ptr |= (str_buf.is_ascii() as usize) << 3;
+                *mut_metadata_ptr |= (str_buf.is_ascii() as u8) << 3;
             }
         }
     }
@@ -299,9 +309,9 @@ impl WritableText for char {
 impl<'a> WritableText for &'a str {
     #[inline(always)]
     fn write_as_text(self, to: &mut Vec<u8>) {
-        let old_len = to.len();
         let len = self.len();
         to.reserve(len);
+        let old_len = to.len();
         #[allow(clippy::uninit_vec)]
         unsafe {
             for o in 0..len {

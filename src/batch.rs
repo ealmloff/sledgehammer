@@ -1,5 +1,3 @@
-use web_sys::console;
-
 use crate::{builder::MaybeId, ElementBuilder, IntoAttribue, IntoElement, NodeId, WritableText};
 
 // operations that have no booleans can be encoded as a half byte, these are placed first
@@ -109,9 +107,13 @@ impl Batch {
     /// Appends a number of nodes as children of the given node.
     pub fn append_child(&mut self, root: MaybeId, child: NodeId) {
         self.encode_op(Op::AppendChildren);
-        self.encode_maybe_id(root);
-        self.encode_bool(false);
-        self.encode_id(child);
+        let size = root.encoded_size() + 4;
+        self.msg.reserve(size as usize);
+        unsafe {
+            self.encode_maybe_id_prealloc(root);
+            self.encode_bool(false);
+            self.encode_id_prealloc(child);
+        }
     }
 
     /// Appends a number of nodes as children of the given node.
@@ -128,9 +130,13 @@ impl Batch {
     /// Replace a node with another node
     pub fn replace_with(&mut self, root: MaybeId, node: NodeId) {
         self.encode_op(Op::ReplaceWith);
-        self.encode_maybe_id(root);
-        self.encode_bool(false);
-        self.encode_id(node);
+        let size = root.encoded_size() + 4;
+        self.msg.reserve(size as usize);
+        unsafe {
+            self.encode_maybe_id_prealloc(root);
+            self.encode_bool(false);
+            self.encode_id_prealloc(node);
+        }
     }
 
     /// Replace a node with a number of nodes
@@ -147,9 +153,13 @@ impl Batch {
     /// Insert a single node after a given node.
     pub fn insert_after(&mut self, root: MaybeId, node: NodeId) {
         self.encode_op(Op::InsertAfter);
-        self.encode_maybe_id(root);
-        self.encode_bool(false);
-        self.encode_id(node);
+        let size = root.encoded_size() + 4;
+        self.msg.reserve(size as usize);
+        unsafe {
+            self.encode_maybe_id_prealloc(root);
+            self.encode_bool(false);
+            self.encode_id_prealloc(node);
+        }
     }
 
     /// Insert a number of nodes after a given node.
@@ -166,9 +176,13 @@ impl Batch {
     /// Insert a single node before a given node.
     pub fn insert_before(&mut self, root: MaybeId, node: NodeId) {
         self.encode_op(Op::InsertBefore);
-        self.encode_maybe_id(root);
-        self.encode_bool(false);
-        self.encode_id(node);
+        let size = root.encoded_size() + 4;
+        self.msg.reserve(size as usize);
+        unsafe {
+            self.encode_maybe_id_prealloc(root);
+            self.encode_bool(false);
+            self.encode_id_prealloc(node);
+        }
     }
 
     /// Insert a number of nodes before a given node.
@@ -191,47 +205,74 @@ impl Batch {
     /// Create a new text node
     pub fn create_text_node(&mut self, text: impl WritableText, id: MaybeId) {
         self.encode_op(Op::CreateTextNode);
-        self.encode_str(text);
-        self.encode_maybe_id(id);
+        let size = id.encoded_size() + 2;
+        self.msg.reserve(size as usize);
+        unsafe {
+            self.encode_str_prealloc(text);
+            self.encode_maybe_id_prealloc(id);
+        }
     }
 
     /// Create a new element node
-    pub fn create_element<'a, 'b>(&mut self, tag: impl IntoElement<'a, 'b>, id: Option<NodeId>) {
+    pub fn create_element<'a, 'b, E>(&mut self, tag: E, id: Option<NodeId>)
+    where
+        E: IntoElement<'a, 'b>,
+    {
         self.encode_op(Op::CreateElement);
-        tag.encode(self);
-        self.encode_optional_id(id);
+        self.msg
+            .reserve((E::SINGLE_BYTE as u8 + (id.is_some() as u8) * 4) as usize);
+        unsafe {
+            tag.encode_prealloc(self);
+            self.encode_optional_id_prealloc(id);
+        }
     }
 
     /// Set the textcontent of a node.
     pub fn set_text(&mut self, text: impl WritableText, root: MaybeId) {
         self.encode_op(Op::SetText);
-        self.encode_maybe_id(root);
-        self.encode_str(text);
+        let size = root.encoded_size() + 2;
+        self.msg.reserve(size as usize);
+        unsafe {
+            self.encode_maybe_id_prealloc(root);
+            self.encode_str_prealloc(text);
+        }
     }
 
     /// Set the value of a node's attribute.
-    pub fn set_attribute<'a, 'b>(
-        &mut self,
-        attr: impl IntoAttribue<'a, 'b>,
-        value: impl WritableText,
-        root: MaybeId,
-    ) {
+    #[inline(never)]
+    pub fn set_attribute<'a, 'b, A>(&mut self, attr: A, value: impl WritableText, root: MaybeId)
+    where
+        A: IntoAttribue<'a, 'b>,
+    {
         self.encode_op(Op::SetAttribute);
-        self.encode_maybe_id(root);
-        attr.encode(self);
-        self.encode_str(value);
+        self.msg
+            .reserve((A::SINGLE_BYTE as u8 + root.encoded_size() + 2) as usize);
+        unsafe {
+            self.encode_maybe_id_prealloc(root);
+            attr.encode_prealloc(self);
+            self.encode_str_prealloc(value);
+        }
     }
 
     /// Remove an attribute from a node.
-    pub fn remove_attribute<'a, 'b>(&mut self, attr: impl IntoAttribue<'a, 'b>, root: MaybeId) {
+    pub fn remove_attribute<'a, 'b, A>(&mut self, attr: A, root: MaybeId)
+    where
+        A: IntoAttribue<'a, 'b>,
+    {
         self.encode_op(Op::RemoveAttribute);
-        self.encode_maybe_id(root);
-        attr.encode(self);
+        let size = A::SINGLE_BYTE as u8 + root.encoded_size();
+        self.msg.reserve(size as usize);
+        unsafe {
+            self.encode_maybe_id_prealloc(root);
+            attr.encode_prealloc(self);
+        }
     }
 
     /// Clone a node and store it with a new id.
     pub fn clone_node(&mut self, id: MaybeId, new_id: MaybeId) {
         self.encode_op(Op::CloneNode);
+        let size = id.encoded_size() + new_id.encoded_size();
+        self.msg.reserve(size as usize);
         self.encode_maybe_id(id);
         self.encode_maybe_id(new_id);
     }
@@ -281,26 +322,47 @@ impl Batch {
     /// Set a style property on a node.
     pub fn set_style(&mut self, style: &str, value: &str, id: MaybeId) {
         self.encode_op(Op::SetStyle);
+        let size = id.encoded_size() + 2 + 2;
+        self.msg.reserve(size as usize);
         self.encode_maybe_id(id);
-        self.encode_str(style);
-        self.encode_str(value);
+        unsafe {
+            self.encode_str_prealloc(style);
+            self.encode_str_prealloc(value);
+        }
     }
 
     /// Remove a style property from a node.
     pub fn remove_style(&mut self, style: &str, id: MaybeId) {
         self.encode_op(Op::RemoveStyle);
-        self.encode_maybe_id(id);
-        self.encode_str(style);
+        let size = id.encoded_size() + 2;
+        self.msg.reserve(size as usize);
+        unsafe {
+            self.encode_maybe_id_prealloc(id);
+            self.encode_str_prealloc(style);
+        }
     }
 
     #[inline]
-    pub(crate) fn encode_optional_id(&mut self, id: Option<NodeId>) {
+    pub(crate) unsafe fn encode_optional_id_prealloc(&mut self, id: Option<NodeId>) {
         match id {
             Some(id) => {
                 self.encode_bool(true);
-                self.encode_id(id);
+                self.encode_id_prealloc(id);
             }
             None => {
+                self.encode_bool(false);
+            }
+        }
+    }
+
+    #[inline]
+    pub(crate) unsafe fn encode_maybe_id_prealloc(&mut self, id: MaybeId) {
+        match id {
+            MaybeId::Node(id) => {
+                self.encode_bool(true);
+                self.encode_id_prealloc(id);
+            }
+            MaybeId::LastNode => {
                 self.encode_bool(false);
             }
         }
@@ -332,32 +394,50 @@ impl Batch {
         }
     }
 
-    #[inline]
+    #[inline(always)]
+    pub(crate) unsafe fn encode_id_prealloc(&mut self, id: NodeId) {
+        self.encode_u32_prealloc(id.0);
+    }
+
+    #[inline(always)]
     pub(crate) fn encode_id(&mut self, id: NodeId) {
         self.encode_u32(id.0);
     }
 
-    #[inline]
+    #[inline(always)]
     pub(crate) fn encode_u32(&mut self, val: u32) {
-        let le = val.to_le();
-        #[allow(clippy::uninit_vec)]
+        self.msg.reserve(4);
         unsafe {
-            let len = self.msg.len();
-            self.msg.reserve(4);
-            self.msg.set_len(len + 4);
-            self.msg.as_mut_ptr().add(len).cast::<u32>().write(le);
+            self.encode_u32_prealloc(val);
         }
     }
 
-    #[inline]
+    #[inline(always)]
+    pub(crate) unsafe fn encode_u32_prealloc(&mut self, val: u32) {
+        let le = val.to_le();
+        unsafe {
+            let len = self.msg.len();
+            self.msg.as_mut_ptr().add(len).cast::<u32>().write(le);
+            self.msg.set_len(len + 4);
+        }
+    }
+
+    #[inline(always)]
     pub(crate) fn encode_u16(&mut self, val: u16) {
+        self.msg.reserve(2);
+        unsafe {
+            self.encode_u16_prealloc(val);
+        }
+    }
+
+    #[inline(always)]
+    pub(crate) unsafe fn encode_u16_prealloc(&mut self, val: u16) {
         let le = val.to_le();
         #[allow(clippy::uninit_vec)]
         unsafe {
             let len = self.msg.len();
-            self.msg.reserve(2);
-            self.msg.set_len(len + 2);
             self.msg.as_mut_ptr().add(len).cast::<u16>().write(le);
+            self.msg.set_len(len + 2);
         }
     }
 
@@ -369,6 +449,15 @@ impl Batch {
         self.encode_u16(len as u16);
     }
 
+    #[inline]
+    pub(crate) unsafe fn encode_str_prealloc(&mut self, string: impl WritableText) {
+        let prev_len = self.str_buf.len();
+        string.write_as_text(&mut self.str_buf);
+        let len = self.str_buf.len() - prev_len;
+        self.encode_u16_prealloc(len as u16);
+    }
+
+    #[inline]
     pub(crate) fn encode_cachable_str(&mut self, string: impl WritableText) {
         let prev_len = self.str_buf.len();
         string.write_as_text(&mut self.str_buf);

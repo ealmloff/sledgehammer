@@ -34,10 +34,24 @@ impl AnyAttribute<'_, '_> {
 
 /// Anything that can be turned into an attribute
 pub trait IntoAttribue<'a, 'b>: Sealed {
+    const SINGLE_BYTE: bool = false;
+
     /// Encode the attribute into the message channel
     fn encode(self, v: &mut Batch);
+
+    /// Encode the attribute into the message channel with memory pre-allocated
+    /// # Safety
+    ///
+    /// This is only safe if the batch is preallocated to the correct size
+    unsafe fn encode_prealloc(self, v: &mut Batch)
+    where
+        Self: Sized,
+    {
+        self.encode(v);
+    }
     /// Encode the attribute into the message channel with a u8 desciminant instead of bit packed bools
     fn encode_u8_discriminant(&self, v: &mut Batch);
+
     /// Turn into an [`AnyAttribute`]
     fn any_attr(self) -> AnyAttribute<'a, 'b>;
 }
@@ -49,10 +63,24 @@ impl<'a, 'b> Attribute {
 }
 
 impl<'a, 'b> IntoAttribue<'a, 'b> for Attribute {
+    const SINGLE_BYTE: bool = true;
+
+    #[inline(always)]
     fn encode(self, v: &mut Batch) {
         v.encode_bool(false);
-        v.msg.push(self as u8);
         v.encode_bool(false);
+        v.msg.push(self as u8);
+    }
+
+    #[inline(always)]
+    unsafe fn encode_prealloc(self, v: &mut Batch) {
+        v.encode_bool(false);
+        v.encode_bool(false);
+        unsafe {
+            let ptr: *mut u8 = v.msg.as_mut_ptr();
+            *ptr.add(v.msg.len()) = self as u8;
+            v.msg.set_len(v.msg.len() + 1);
+        }
     }
 
     fn encode_u8_discriminant(&self, v: &mut Batch) {
