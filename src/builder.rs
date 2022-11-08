@@ -51,7 +51,7 @@ impl Default for MsgChannel {
             );
             INTERPRETER_EXISTS = true;
         }
-        assert!(0x1F > Op::CloneNodeChildren as u8);
+        assert!(0x1F > Op::NoOp as u8);
         format!(
             "init: {:?}, {:?}, {:?}",
             unsafe { MSG_PTR_PTR as usize },
@@ -101,19 +101,9 @@ impl MsgChannel {
         self.batch.append_child(root, child)
     }
 
-    /// Appends a number of nodes as children of the given node.
-    pub fn append_children(&mut self, root: MaybeId, children: Vec<NodeId>) {
-        self.batch.append_children(root, children)
-    }
-
     /// Replace a node with another node
     pub fn replace_with(&mut self, root: MaybeId, node: NodeId) {
         self.batch.replace_with(root, node)
-    }
-
-    /// Replace a node with a number of nodes
-    pub fn replace_with_nodes(&mut self, root: MaybeId, nodes: Vec<NodeId>) {
-        self.batch.replace_with_nodes(root, nodes)
     }
 
     /// Insert a single node after a given node.
@@ -121,19 +111,9 @@ impl MsgChannel {
         self.batch.insert_after(root, node)
     }
 
-    /// Insert a number of nodes after a given node.
-    pub fn insert_nodes_after(&mut self, root: MaybeId, nodes: &[NodeId]) {
-        self.batch.insert_nodes_after(root, nodes)
-    }
-
     /// Insert a single node before a given node.
     pub fn insert_before(&mut self, root: MaybeId, node: NodeId) {
         self.batch.insert_before(root, node)
-    }
-
-    /// Insert a number of nodes before a given node.
-    pub fn insert_nodes_before(&mut self, root: MaybeId, nodes: &[NodeId]) {
-        self.batch.insert_nodes_before(root, nodes)
     }
 
     /// Remove a node from the DOM.
@@ -174,11 +154,6 @@ impl MsgChannel {
     /// Clone a node and store it with a new id.
     pub fn clone_node(&mut self, id: MaybeId, new_id: MaybeId) {
         self.batch.clone_node(id, new_id)
-    }
-
-    /// Clone the children of a given node and store them with new ids.
-    pub fn clone_node_children(&mut self, id: MaybeId, new_ids: Vec<NodeId>) {
-        self.batch.clone_node_children(id, new_ids)
     }
 
     /// Move the last node to the first child
