@@ -62,6 +62,8 @@ impl<'a, 'b> Element {
 }
 
 impl<'a, 'b> IntoElement<'a, 'b> for Element {
+    const SINGLE_BYTE: bool = true;
+
     #[inline(always)]
     fn encode(&self, v: &mut Batch) {
         v.msg.push(*self as u8);
@@ -74,8 +76,9 @@ impl<'a, 'b> IntoElement<'a, 'b> for Element {
     {
         unsafe {
             let ptr: *mut u8 = v.msg.as_mut_ptr();
-            *ptr.add(v.msg.len()) = *self as u8;
-            v.msg.set_len(v.msg.len() + 1);
+            let old_len = v.msg.len();
+            *ptr.add(old_len) = *self as u8;
+            v.msg.set_len(old_len + 1);
         }
     }
 
