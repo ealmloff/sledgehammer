@@ -1,4 +1,4 @@
-use crate::{builder::MaybeId, ElementBuilder, IntoAttribue, IntoElement, NodeId, WritableText};
+use crate::{channel::MaybeId, ElementBuilder, IntoAttribue, IntoElement, NodeId, WritableText};
 
 // operations that have no booleans can be encoded as a half byte, these are placed first
 pub(crate) enum Op {
@@ -92,7 +92,7 @@ impl Default for Batch {
 }
 
 impl Batch {
-    /// Finalizes the batch.
+    /// Finalizes the batch to prepare it to be run
     pub fn finalize(mut self) -> FinalizedBatch {
         self.encode_op(Op::Stop);
         FinalizedBatch {
@@ -102,46 +102,46 @@ impl Batch {
     }
 
     /// Appends a number of nodes as children of the given node.
-    pub fn append_child(&mut self, root: MaybeId, child: NodeId) {
+    pub fn append_child(&mut self, root: MaybeId, child: MaybeId) {
         self.encode_op(Op::AppendChildren);
-        let size = root.encoded_size() + 4;
+        let size = root.encoded_size() + child.encoded_size();
         self.msg.reserve(size as usize);
         unsafe {
             self.encode_maybe_id_prealloc(root);
-            self.encode_id_prealloc(child);
+            self.encode_maybe_id_prealloc(child);
         }
     }
 
     /// Replace a node with another node
-    pub fn replace_with(&mut self, root: MaybeId, node: NodeId) {
+    pub fn replace_with(&mut self, root: MaybeId, node: MaybeId) {
         self.encode_op(Op::ReplaceWith);
-        let size = root.encoded_size() + 4;
+        let size = root.encoded_size() + node.encoded_size();
         self.msg.reserve(size as usize);
         unsafe {
             self.encode_maybe_id_prealloc(root);
-            self.encode_id_prealloc(node);
+            self.encode_maybe_id_prealloc(node);
         }
     }
 
     /// Insert a single node after a given node.
-    pub fn insert_after(&mut self, root: MaybeId, node: NodeId) {
+    pub fn insert_after(&mut self, root: MaybeId, node: MaybeId) {
         self.encode_op(Op::InsertAfter);
-        let size = root.encoded_size() + 4;
+        let size = root.encoded_size() + node.encoded_size();
         self.msg.reserve(size as usize);
         unsafe {
             self.encode_maybe_id_prealloc(root);
-            self.encode_id_prealloc(node);
+            self.encode_maybe_id_prealloc(node);
         }
     }
 
     /// Insert a single node before a given node.
-    pub fn insert_before(&mut self, root: MaybeId, node: NodeId) {
+    pub fn insert_before(&mut self, root: MaybeId, node: MaybeId) {
         self.encode_op(Op::InsertBefore);
-        let size = root.encoded_size() + 4;
+        let size = root.encoded_size() + node.encoded_size();
         self.msg.reserve(size as usize);
         unsafe {
             self.encode_maybe_id_prealloc(root);
-            self.encode_id_prealloc(node);
+            self.encode_maybe_id_prealloc(node);
         }
     }
 
@@ -317,19 +317,6 @@ impl Batch {
             }
             MaybeId::LastNode => {
                 self.encode_bool(false);
-            }
-        }
-    }
-
-    #[inline]
-    pub(crate) fn encode_optional_id_with_byte_bool(&mut self, id: Option<NodeId>) {
-        match id {
-            Some(id) => {
-                self.msg.push(1);
-                self.encode_id(id);
-            }
-            None => {
-                self.msg.push(0);
             }
         }
     }

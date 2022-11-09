@@ -76,12 +76,12 @@
 // mod attrs;
 pub mod attribute;
 pub mod batch;
-pub mod builder;
+pub mod channel;
 pub mod element;
 
 pub use attribute::{Attribute, IntoAttribue};
-pub use builder::{MsgChannel, NodeId, WritableText};
-pub use element::{Element, ElementBuilder, IntoElement};
+pub use channel::{MsgChannel, NodeId, WritableText};
+pub use element::{Element, ElementBuilder, IntoElement, NodeBuilder, TextBuilder};
 
 use wasm_bindgen::prelude::*;
 use web_sys::Node;
@@ -138,9 +138,12 @@ extern "C" {
     pub(crate) fn GetNode(this: &JsInterpreter, id: u32) -> Node;
 }
 
+/// Something that lives in a namespace like a tag or attribute
 pub struct InNamespace<'a, T>(pub T, pub &'a str);
 
+/// Something that can live in a namespace
 pub trait WithNsExt {
+    /// Moves the item into a namespace
     fn in_namespace(self, namespace: &str) -> InNamespace<Self>
     where
         Self: Sized,
