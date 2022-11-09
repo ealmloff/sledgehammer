@@ -66,11 +66,62 @@ pub(crate) enum Op {
     NoOp = 20,
 }
 
-pub struct FinalizedBatch {
-    pub(crate) msg: Vec<u8>,
-    pub(crate) str: Vec<u8>,
+/// A batch of operations ready to perform on the DOM.
+pub trait PreparedBatch {
+    fn msg(&self) -> &[u8];
+    fn str(&self) -> &[u8];
 }
 
+/// A batch of operations ready to perform on the DOM.
+pub struct FinalizedBatch {
+    pub msg: Vec<u8>,
+    pub str: Vec<u8>,
+}
+
+impl PreparedBatch for FinalizedBatch {
+    fn msg(&self) -> &[u8] {
+        &self.msg
+    }
+    fn str(&self) -> &[u8] {
+        &self.str
+    }
+}
+
+impl<'a> PreparedBatch for &'a FinalizedBatch {
+    fn msg(&self) -> &[u8] {
+        &self.msg
+    }
+    fn str(&self) -> &[u8] {
+        &self.str
+    }
+}
+
+/// A batch of static operations ready to perform on the DOM.
+/// This is meant to be generated from FinalizedBatch from a macro.
+pub struct StaticBatch {
+    pub msg: &'static [u8],
+    pub str: &'static [u8],
+}
+
+impl PreparedBatch for StaticBatch {
+    fn msg(&self) -> &[u8] {
+        self.msg
+    }
+    fn str(&self) -> &[u8] {
+        self.str
+    }
+}
+
+impl<'a> PreparedBatch for &'a StaticBatch {
+    fn msg(&self) -> &[u8] {
+        self.msg
+    }
+    fn str(&self) -> &[u8] {
+        self.str
+    }
+}
+
+/// A batch of operations to perform on the DOM.
 pub struct Batch {
     pub(crate) msg: Vec<u8>,
     pub(crate) str_buf: Vec<u8>,
