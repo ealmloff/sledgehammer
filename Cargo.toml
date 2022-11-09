@@ -1,6 +1,6 @@
 [package]
 name = "sledgehammer"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Evan Almloff <ealmlof1@stumail.jccc.edu>"]
 edition = "2021"
 description = "Fast bindings for dom manipulations"

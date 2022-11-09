@@ -57,7 +57,7 @@ impl Default for MsgChannel {
             );
             INTERPRETER_EXISTS = true;
         }
-        assert!(0x1F > Op::NoOp as u8);
+        debug_assert!(0x1F > Op::NoOp as u8);
         format!(
             "init: {:?}, {:?}, {:?}",
             unsafe { MSG_PTR_PTR as usize },
@@ -82,7 +82,7 @@ impl Default for MsgChannel {
 }
 
 impl MsgChannel {
-    /// IMPORTANT: Unlike this method is exicuted immediatly and does not wait for the next flush
+    /// IMPORTANT: This method is exicuted immediatly and does not wait for the next flush
     ///
     /// Example:
     /// ```no_run
@@ -92,12 +92,13 @@ impl MsgChannel {
     /// let mut channel = MsgChannel::default();
     /// // assign the NodeId(0) to the body element from web-sys
     /// channel.set_node(NodeId(0), JsCast::dyn_into(body).unwrap());
+    /// // no need to call flush here because set_node is exicuted immediatly
     /// ```
     pub fn set_node(&mut self, id: NodeId, node: Node) {
         self.js_interpreter.SetNode(id.0, node);
     }
 
-    /// IMPORTANT: Unlike this method is exicuted immediatly and does not wait for the next flush
+    /// IMPORTANT: This method is exicuted immediatly and does not wait for the next flush
     ///
     /// Example:
     /// ```no_run
@@ -107,6 +108,8 @@ impl MsgChannel {
     /// let element = channel.get_node(NodeId(0));
     /// let text = element.text_content().map(|t| t + " + web-sys");
     /// element.set_text_content(text.as_deref());
+    /// // no need to call flush here because get_node is exicuted immediatly
+    /// ```
     pub fn get_node(&mut self, id: NodeId) -> Node {
         self.js_interpreter.GetNode(id.0)
     }
@@ -487,7 +490,7 @@ impl MsgChannel {
         self.batch.append(batch);
     }
 
-    /// IMPORTANT: Unlike this method is exicuted immediatly and does not wait for the next flush
+    /// IMPORTANT: This method is exicuted immediatly and does not wait for the next flush
     ///
     /// Run a batch of operations on the DOM immediately. This only runs the operations that are in the batch, not the operations that are queued in the [`MsgChannel`].
     ///
@@ -686,7 +689,7 @@ macro_rules! write_sized {
 
                 if neg {
                     i -= 1;
-                    unsafe { ptr.add(i).write(b'-') }
+                    unsafe { ptr.add(old_len + i).write(b'-') }
                 }
 
                 #[allow(clippy::uninit_vec)]

@@ -122,6 +122,11 @@ impl<'a> PreparedBatch for &'a StaticBatch {
 }
 
 /// A batch of operations to perform on the DOM.
+///
+/// This allows you to build up a batch of operations to perform on the DOM outside of the main MsgChannel batch.
+/// This is useful for building up a batch of operations to perform on the DOM many times. If the operation is only performed once, it is better to use the `MsgChannel` directly because it reuses the same allocation from the last batch of operations.
+/// See [`MsgChannel::append`] and [`MsgChannel::run_batch`] for examples.
+/// The methods on this struct are a subset of the methods on [`MsgChannel`] and work the same with the exception of [`Batch::finalize`].
 pub struct Batch {
     pub(crate) msg: Vec<u8>,
     pub(crate) str_buf: Vec<u8>,
@@ -143,7 +148,7 @@ impl Default for Batch {
 }
 
 impl Batch {
-    /// Finalizes the batch to prepare it to be run
+    /// Finalizes the batch and prepares it to be run
     pub fn finalize(mut self) -> FinalizedBatch {
         self.encode_op(Op::Stop);
         FinalizedBatch {
