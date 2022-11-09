@@ -8,7 +8,7 @@ use std::{fmt::Arguments, io::Write};
 use web_sys::Node;
 
 use crate::{
-    batch::{Batch, FinalizedBatch, Op},
+    batch::{Batch, Op, PreparedBatch},
     last_needs_memory, update_last_memory, work_last_created, ElementBuilder, IntoAttribue,
     IntoElement, JsInterpreter, MSG_METADATA_PTR, MSG_PTR_PTR, STR_LEN_PTR, STR_PTR_PTR,
 };
@@ -499,8 +499,8 @@ impl MsgChannel {
     /// // add the batch to the channel
     /// channel.run_batch(&batch.finalize());
     /// ```
-    pub fn run_batch(&mut self, batch: &FinalizedBatch) {
-        run_batch(&batch.msg, &batch.str);
+    pub fn run_batch(&mut self, batch: impl PreparedBatch) {
+        run_batch(batch.msg(), batch.str());
     }
 }
 
