@@ -33,7 +33,8 @@ impl AnyAttribute<'_, '_> {
 }
 
 /// Anything that can be turned into an attribute
-pub trait IntoAttribue<'a, 'b>: Sealed {
+pub trait IntoAttribue<'a, 'b>: Sealed + Into<AnyAttribute<'a, 'b>> {
+    /// If the attribute can be encoded in a single byte
     const SINGLE_BYTE: bool = false;
 
     /// Encode the attribute into the message channel
@@ -49,14 +50,13 @@ pub trait IntoAttribue<'a, 'b>: Sealed {
     {
         self.encode(v);
     }
+
     /// Encode the attribute into the message channel with a u8 desciminant instead of bit packed bools
     fn encode_u8_discriminant(&self, v: &mut Batch);
-
-    /// Turn into an [`AnyAttribute`]
-    fn any_attr(self) -> AnyAttribute<'a, 'b>;
 }
 
 impl<'a, 'b> Attribute {
+    /// Turn into an [`AnyAttribute`] in a const context
     pub const fn any_attr_const(self) -> AnyAttribute<'a, 'b> {
         AnyAttribute::Attribute(self)
     }
@@ -86,9 +86,11 @@ impl<'a, 'b> IntoAttribue<'a, 'b> for Attribute {
     fn encode_u8_discriminant(&self, v: &mut Batch) {
         v.msg.push(*self as u8)
     }
+}
 
-    fn any_attr(self) -> AnyAttribute<'a, 'b> {
-        AnyAttribute::Attribute(self)
+impl<'a, 'b> From<Attribute> for AnyAttribute<'a, 'b> {
+    fn from(a: Attribute) -> Self {
+        AnyAttribute::Attribute(a)
     }
 }
 
@@ -111,9 +113,11 @@ impl<'a, 'b> IntoAttribue<'a, 'b> for InNamespace<'a, Attribute> {
         v.msg.push(self.0 as u8);
         v.encode_str(self.1);
     }
+}
 
-    fn any_attr(self) -> AnyAttribute<'a, 'b> {
-        AnyAttribute::InNamespace(self)
+impl<'a, 'b> From<InNamespace<'a, Attribute>> for AnyAttribute<'a, 'b> {
+    fn from(a: InNamespace<'a, Attribute>) -> Self {
+        AnyAttribute::InNamespace(a)
     }
 }
 
@@ -128,9 +132,11 @@ impl<'a, 'b> IntoAttribue<'a, 'b> for &'a str {
         v.msg.push(254);
         v.encode_cachable_str(*self);
     }
+}
 
-    fn any_attr(self) -> AnyAttribute<'a, 'b> {
-        AnyAttribute::Str(self)
+impl<'a, 'b> From<&'a str> for AnyAttribute<'a, 'b> {
+    fn from(a: &'a str) -> Self {
+        AnyAttribute::Str(a)
     }
 }
 
@@ -153,12 +159,16 @@ impl<'a, 'b> IntoAttribue<'a, 'b> for InNamespace<'a, &'b str> {
         v.encode_cachable_str(self.0);
         v.encode_cachable_str(self.1);
     }
+}
 
-    fn any_attr(self) -> AnyAttribute<'a, 'b> {
-        AnyAttribute::InNamespaceStr(self)
+impl<'a, 'b> From<InNamespace<'a, &'b str>> for AnyAttribute<'a, 'b> {
+    fn from(a: InNamespace<'a, &'b str>) -> Self {
+        AnyAttribute::InNamespaceStr(a)
     }
 }
 
+/// All built-in attributes
+/// These are the attributes can be encoded with a single byte so they are more efficient (but less flexable) than a &str attribute
 #[derive(Copy, Clone)]
 pub enum Attribute {
     accept_charset,

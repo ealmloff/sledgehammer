@@ -34,7 +34,8 @@ impl AnyElement<'_, '_> {
 }
 
 /// Anything that can be turned into an element name
-pub trait IntoElement<'a, 'b>: Sealed {
+pub trait IntoElement<'a, 'b>: Sealed + Into<AnyElement<'a, 'b>> {
+    /// If the element name can be encoded in a single byte
     const SINGLE_BYTE: bool = false;
 
     /// Encode the element into the message channel
@@ -50,9 +51,6 @@ pub trait IntoElement<'a, 'b>: Sealed {
     {
         self.encode(v);
     }
-
-    /// Turn into an [`AnyElement`]
-    fn any_element(self) -> AnyElement<'a, 'b>;
 }
 
 impl<'a, 'b> Element {
@@ -81,13 +79,16 @@ impl<'a, 'b> IntoElement<'a, 'b> for Element {
             v.msg.set_len(old_len + 1);
         }
     }
+}
 
-    fn any_element(self) -> AnyElement<'a, 'b> {
-        AnyElement::Element(self)
+impl<'a, 'b> From<Element> for AnyElement<'a, 'b> {
+    fn from(e: Element) -> Self {
+        AnyElement::Element(e)
     }
 }
 
 impl<'a, 'b> InNamespace<'a, Element> {
+    /// Turn into an [`AnyElement`] in a const context
     pub const fn any_element_const(self) -> AnyElement<'a, 'b> {
         AnyElement::InNamespace(self)
     }
@@ -99,9 +100,11 @@ impl<'a, 'b> IntoElement<'a, 'b> for InNamespace<'a, Element> {
         v.msg.push(self.0 as u8);
         v.encode_str(self.1);
     }
+}
 
-    fn any_element(self) -> AnyElement<'a, 'b> {
-        AnyElement::InNamespace(self)
+impl<'a, 'b> From<InNamespace<'a, Element>> for AnyElement<'a, 'b> {
+    fn from(e: InNamespace<'a, Element>) -> Self {
+        AnyElement::InNamespace(e)
     }
 }
 
@@ -110,9 +113,11 @@ impl<'a, 'b> IntoElement<'a, 'b> for &'a str {
         v.msg.push(254);
         v.encode_str(*self);
     }
+}
 
-    fn any_element(self) -> AnyElement<'a, 'b> {
-        AnyElement::Str(self)
+impl<'a, 'b> From<&'a str> for AnyElement<'a, 'b> {
+    fn from(e: &'a str) -> Self {
+        AnyElement::Str(e)
     }
 }
 
@@ -122,9 +127,11 @@ impl<'a, 'b> IntoElement<'a, 'b> for InNamespace<'a, &'b str> {
         v.encode_str(self.0);
         v.encode_str(self.1);
     }
+}
 
-    fn any_element(self) -> AnyElement<'a, 'b> {
-        AnyElement::InNamespaceStr(self)
+impl<'a, 'b> From<InNamespace<'a, &'b str>> for AnyElement<'a, 'b> {
+    fn from(e: InNamespace<'a, &'b str>) -> Self {
+        AnyElement::InNamespaceStr(e)
     }
 }
 
@@ -134,15 +141,95 @@ impl<'a, 'b> InNamespace<'a, &'b str> {
     }
 }
 
+/// A builder for any node
+pub enum NodeBuilder<'a> {
+    Text(TextBuilder<'a>),
+    Element(ElementBuilder<'a>),
+}
+
+impl NodeBuilder<'_> {
+    /// Encode the node into a batch
+    pub(crate) fn encode(&self, v: &mut Batch) {
+        match self {
+            NodeBuilder::Text(t) => t.encode(v),
+            NodeBuilder::Element(e) => e.encode(v),
+        }
+    }
+}
+
+impl<'a> From<TextBuilder<'a>> for NodeBuilder<'a> {
+    fn from(t: TextBuilder<'a>) -> Self {
+        NodeBuilder::Text(t)
+    }
+}
+
+impl<'a> From<ElementBuilder<'a>> for NodeBuilder<'a> {
+    fn from(e: ElementBuilder<'a>) -> Self {
+        NodeBuilder::Element(e)
+    }
+}
+
+/// A builder for an text node with a id, and text
+pub struct TextBuilder<'a> {
+    id: Option<NodeId>,
+    text: &'a str,
+}
+
+impl<'a> TextBuilder<'a> {
+    /// Create a new text builder
+    pub const fn new(text: &'a str) -> Self {
+        Self { id: None, text }
+    }
+
+    /// Set the id of the text node
+    pub const fn id(mut self, id: NodeId) -> Self {
+        self.id = Some(id);
+        self
+    }
+
+    /// Encode the text node into a batch
+    pub(crate) fn encode(&self, v: &mut Batch) {
+        match self.id {
+            Some(id) => {
+                v.msg.push(3);
+                v.encode_id(id);
+            }
+            None => {
+                v.msg.push(2);
+            }
+        }
+        v.encode_str(self.text);
+    }
+}
+
 /// A builder for a element with an id, kind, attributes, and children
+///
+/// /// Example:
+/// ```rust
+/// let mut channel = MsgChannel::default();
+
+/// // create an element using sledgehammer
+/// channel.build_full_element(
+///     ElementBuilder::new("div".into())
+///         .id(NodeId(1))
+///         .attrs(&[(Attribute::style.into(), "color: blue")])
+///         .children(&[
+///             ElementBuilder::new(Element::p.into())
+///                 .into(),
+///             TextBuilder::new("Hello from sledgehammer!").into(),
+///         ]),
+/// );
+/// channel.flush();
+/// ```
 pub struct ElementBuilder<'a> {
     id: Option<NodeId>,
     kind: AnyElement<'a, 'a>,
     attrs: &'a [(AnyAttribute<'a, 'a>, &'a str)],
-    children: &'a [ElementBuilder<'a>],
+    children: &'a [NodeBuilder<'a>],
 }
 
 impl<'a> ElementBuilder<'a> {
+    /// Create a new element builder
     pub const fn new(kind: AnyElement<'a, 'a>) -> Self {
         Self {
             id: None,
@@ -152,23 +239,35 @@ impl<'a> ElementBuilder<'a> {
         }
     }
 
+    /// Set the id of the element
     pub const fn id(mut self, id: NodeId) -> Self {
         self.id = Some(id);
         self
     }
 
+    /// Set the attributes of the element
     pub const fn attrs(mut self, attrs: &'a [(AnyAttribute<'a, 'a>, &'a str)]) -> Self {
         self.attrs = attrs;
         self
     }
 
-    pub const fn children(mut self, children: &'a [ElementBuilder<'a>]) -> Self {
+    /// Set the children of the element
+    pub const fn children(mut self, children: &'a [NodeBuilder<'a>]) -> Self {
         self.children = children;
         self
     }
 
+    /// Encode the element into the a batch
     pub(crate) fn encode(&self, v: &mut Batch) {
-        v.encode_optional_id_with_byte_bool(self.id);
+        match self.id {
+            Some(id) => {
+                v.msg.push(1);
+                v.encode_id(id);
+            }
+            None => {
+                v.msg.push(0);
+            }
+        }
         self.kind.encode(v);
         // these are packed together so they can be read as a u16
         v.msg.push(self.attrs.len() as u8);
@@ -184,6 +283,7 @@ impl<'a> ElementBuilder<'a> {
 }
 
 /// All built-in elements
+/// These are the element can be encoded with a single byte so they are more efficient (but less flexable) than a &str element
 #[allow(unused)]
 #[derive(Copy, Clone)]
 pub enum Element {

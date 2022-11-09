@@ -1,4 +1,4 @@
-use sledgehammer::{builder::MaybeId, *};
+use sledgehammer::{channel::MaybeId, *};
 use wasm_bindgen::JsCast;
 
 fn main() {
@@ -31,30 +31,29 @@ fn main() {
 
     // create an element using sledgehammer
     channel.build_full_element(
-        ElementBuilder::new(Element::div.any_element())
+        ElementBuilder::new(Element::div.into())
             .id(NodeId(1))
             .children(&[
-                ElementBuilder::new(Element::p.any_element())
+                ElementBuilder::new(Element::p.into())
                     .id(NodeId(2))
-                    .attrs(&[(Attribute::style.any_attr(), "color: blue")]),
-                ElementBuilder::new(
-                    "svg"
-                        .in_namespace("http://www.w3.org/2000/svg")
-                        .any_element(),
-                )
-                .attrs(&[(
-                    "width"
-                        .in_namespace("http://www.w3.org/2000/svg")
-                        .any_attr(),
-                    "100%",
-                )]),
+                    .attrs(&[(Attribute::style.into(), "color: blue")])
+                    .into(),
+                ElementBuilder::new("svg".in_namespace("http://www.w3.org/2000/svg").into())
+                    .attrs(&[(
+                        "width".in_namespace("http://www.w3.org/2000/svg").into(),
+                        "100%",
+                    )])
+                    .into(),
             ]),
     );
 
     channel.set_text("Hello from sledehammer!", MaybeId::Node(NodeId(2)));
 
     // append the new node to the body
-    channel.append_child(MaybeId::Node(NodeId(0)), NodeId(1));
+    channel.append_child(
+        MaybeId::Node(NodeId(0)),
+        sledgehammer::channel::MaybeId::Node(NodeId(1)),
+    );
 
     // execute the queued operations
     channel.flush();
