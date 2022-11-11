@@ -179,14 +179,37 @@ impl Batch {
         }
     }
 
+    /// Replace a node with many nodes
+    pub fn replace_with_nodes(&mut self, root: MaybeId, nodes: &[MaybeId]) {
+        self.encode_op(Op::ReplaceWith);
+        self.encode_bool(true);
+        self.encode_maybe_id(root);
+        self.msg.push(nodes.len() as u8);
+        for n in nodes {
+            self.encode_maybe_id_u8_discriminant(*n);
+        }
+    }
+
     /// Insert a single node after a given node.
     pub fn insert_after(&mut self, root: MaybeId, node: MaybeId) {
         self.encode_op(Op::InsertAfter);
         let size = root.encoded_size() + node.encoded_size();
         self.msg.reserve(size as usize);
         unsafe {
+            self.encode_bool(false);
             self.encode_maybe_id_prealloc(root);
             self.encode_maybe_id_prealloc(node);
+        }
+    }
+
+    /// Insert many nodes after a given node.
+    pub fn insert_nodes_after(&mut self, root: MaybeId, nodes: &[MaybeId]) {
+        self.encode_op(Op::InsertAfter);
+        self.encode_bool(true);
+        self.encode_maybe_id(root);
+        self.msg.push(nodes.len() as u8);
+        for n in nodes {
+            self.encode_maybe_id_u8_discriminant(*n);
         }
     }
 
@@ -196,8 +219,20 @@ impl Batch {
         let size = root.encoded_size() + node.encoded_size();
         self.msg.reserve(size as usize);
         unsafe {
+            self.encode_bool(false);
             self.encode_maybe_id_prealloc(root);
             self.encode_maybe_id_prealloc(node);
+        }
+    }
+
+    /// Insert many nodes before a given node.
+    pub fn insert_nodes_before(&mut self, root: MaybeId, nodes: &[MaybeId]) {
+        self.encode_op(Op::InsertBefore);
+        self.encode_bool(true);
+        self.encode_maybe_id(root);
+        self.msg.push(nodes.len() as u8);
+        for n in nodes {
+            self.encode_maybe_id_u8_discriminant(*n);
         }
     }
 
@@ -208,13 +243,13 @@ impl Batch {
     }
 
     /// Create a new text node
-    pub fn create_text_node(&mut self, text: impl WritableText, id: MaybeId) {
+    pub fn create_text_node(&mut self, text: impl WritableText, id: Option<NodeId>) {
         self.encode_op(Op::CreateTextNode);
-        let size = id.encoded_size() + 2;
+        let size = (id.is_some() as u8) * 4 + 2;
         self.msg.reserve(size as usize);
         unsafe {
             self.encode_str_prealloc(text);
-            self.encode_maybe_id_prealloc(id);
+            self.encode_optional_id_prealloc(id);
         }
     }
 
@@ -244,7 +279,6 @@ impl Batch {
     }
 
     /// Set the value of a node's attribute.
-    #[inline(never)]
     pub fn set_attribute<'a, 'b, A>(&mut self, attr: A, value: impl WritableText, root: MaybeId)
     where
         A: IntoAttribue<'a, 'b>,
@@ -360,6 +394,19 @@ impl Batch {
             }
             MaybeId::LastNode => {
                 self.encode_bool(false);
+            }
+        }
+    }
+
+    #[inline]
+    pub(crate) fn encode_maybe_id_u8_discriminant(&mut self, id: MaybeId) {
+        match id {
+            MaybeId::Node(id) => {
+                self.msg.push(1);
+                self.encode_id(id);
+            }
+            MaybeId::LastNode => {
+                self.msg.push(0);
             }
         }
     }
