@@ -1,4 +1,4 @@
-let op, len, ns, attr, i, j, value, element, ptr, pos, end, out, char, numAttributes, endRounded, inptr, buffer, metadata, parent, children, node, name, id, nodes;
+let op, len, ns, attr, i, j, value, element, ptr, pos, end, out, char, numAttributes, endRounded, inptr, buffer, metadata, parent, numNodes, children, node, name, id, nodes;
 
 export function work_last_created() {
     inptr.Work();
@@ -67,59 +67,108 @@ function exOp() {
             break;
         // replace with
         case 8:
-            // the first bool is encoded as op & (1 << 5)
-            if (op & 0x20) {
+            // the second bool is encoded as op & (1 << 6)
+            if (op & 0x40) {
                 parent = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
                 inptr.u8BufPos += 4;
             }
             else {
                 parent = inptr.lastNode;
             }
-            // the second bool is encoded as op & (1 << 6)
-            if (op & 0x40) {
-                parent.replaceWith(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
-                inptr.u8BufPos += 4;
+            // the first bool is encoded as op & (1 << 5)
+            if (op & 0x20) {
+                numNodes = inptr.view.getUint8(inptr.u8BufPos++, true);
+                nodes = [];
+                for (i = 0; i < numNodes; i++) {
+                    if (inptr.view.getUint8(inptr.u8BufPos++, true)) {
+                        nodes.push(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
+                        inptr.u8BufPos += 4;
+                    }
+                    else {
+                        nodes.push(inptr.lastNode);
+                    }
+                }
+                parent.replaceWith(...nodes);
             }
             else {
-                parent.replaceWith(inptr.lastNode);
+                // the third bool is encoded as op & (1 << 7)
+                if (op & 0x80) {
+                    parent.replaceWith(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
+                    inptr.u8BufPos += 4;
+                }
+                else {
+                    parent.replaceWith(inptr.lastNode);
+                }
             }
             break;
         // insert after
         case 9:
-            // the first bool is encoded as op & (1 << 5)
-            if (op & 0x20) {
+            // the second bool is encoded as op & (1 << 6)
+            if (op & 0x40) {
                 parent = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
                 inptr.u8BufPos += 4;
             }
             else {
                 parent = inptr.lastNode;
             }
-            // the second bool is encoded as op & (1 << 6)
-            if (op & 0x40) {
-                parent.after(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
-                inptr.u8BufPos += 4;
-            }
-            else {
-                parent.after(inptr.lastNode);
+            // the first bool is encoded as op & (1 << 5)
+            if (op & 0x20) {
+                numNodes = inptr.view.getUint8(inptr.u8BufPos++, true);
+                nodes = [];
+                for (i = 0; i < numNodes; i++) {
+                    if (inptr.view.getUint8(inptr.u8BufPos++, true)) {
+                        nodes.push(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
+                        inptr.u8BufPos += 4;
+                    }
+                    else {
+                        nodes.push(inptr.lastNode);
+                    }
+                }
+                parent.after(...nodes);
+            } else {
+                // the third bool is encoded as op & (1 << 7)
+                if (op & 0x80) {
+                    parent.after(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
+                    inptr.u8BufPos += 4;
+                }
+                else {
+                    parent.after(inptr.lastNode);
+                }
             }
             break;
         // insert before
         case 10:
-            // the first bool is encoded as op & (1 << 5)
-            if (op & 0x20) {
+            // the second bool is encoded as op & (1 << 6)
+            if (op & 0x40) {
                 parent = inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)];
                 inptr.u8BufPos += 4;
             }
             else {
                 parent = inptr.lastNode;
             }
-            // the second bool is encoded as op & (1 << 6)
-            if (op & 0x40) {
-                parent.before(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
-                inptr.u8BufPos += 4;
-            }
-            else {
-                parent.before(inptr.lastNode);
+            // the first bool is encoded as op & (1 << 5)
+            if (op & 0x20) {
+                numNodes = inptr.view.getUint8(inptr.u8BufPos++, true);
+                nodes = [];
+                for (i = 0; i < numNodes; i++) {
+                    if (inptr.view.getUint8(inptr.u8BufPos++, true)) {
+                        nodes.push(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
+                        inptr.u8BufPos += 4;
+                    }
+                    else {
+                        nodes.push(inptr.lastNode);
+                    }
+                }
+                parent.before(...nodes);
+            } else {
+                // the third bool is encoded as op & (1 << 7)
+                if (op & 0x80) {
+                    parent.before(inptr.nodes[inptr.view.getUint32(inptr.u8BufPos, true)]);
+                    inptr.u8BufPos += 4;
+                }
+                else {
+                    parent.before(inptr.lastNode);
+                }
             }
             break;
         // remove

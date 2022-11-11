@@ -166,6 +166,21 @@ impl MsgChannel {
         self.batch.replace_with(root, node)
     }
 
+    /// Replace a node with many nodes
+    ///
+    /// Example:
+    /// ```no_run
+    /// let mut channel = MsgChannel::default();
+    /// channel.create_element("div", Some(NodeId(0)));
+    /// channel.create_element("p", None);
+    /// // replace the <p> element with the <div> element
+    /// channel.replace_with_nodes(MaybeId::Node(NodeId(0)), MaybeId::LastNode);
+    /// channel.flush();
+    /// ```
+    pub fn replace_with_nodes(&mut self, root: MaybeId, nodes: &[MaybeId]) {
+        self.batch.replace_with_nodes(root, nodes)
+    }
+
     /// Insert a single node after a given node.
     ///
     /// Example:
@@ -181,6 +196,21 @@ impl MsgChannel {
         self.batch.insert_after(root, node)
     }
 
+    /// Insert a many nodes after a given node.
+    ///
+    /// Example:
+    /// ```no_run
+    /// let mut channel = MsgChannel::default();
+    /// channel.create_element("div", Some(NodeId(0)));
+    /// channel.create_element("p", None);
+    /// // insert the <p> element after the <div> element
+    /// channel.insert_nodes_after(MaybeId::Node(NodeId(0)), &[MaybeId::LastNode]);
+    /// channel.flush();
+    /// ```
+    pub fn insert_nodes_after(&mut self, root: MaybeId, nodes: &[MaybeId]) {
+        self.batch.insert_nodes_after(root, nodes)
+    }
+
     /// Insert a single node before a given node.
     ///
     /// Example:
@@ -194,6 +224,21 @@ impl MsgChannel {
     /// ```
     pub fn insert_before(&mut self, root: MaybeId, node: MaybeId) {
         self.batch.insert_before(root, node)
+    }
+
+    /// Insert many nodes before a given node.
+    ///
+    /// Example:
+    /// ```no_run
+    /// let mut channel = MsgChannel::default();
+    /// channel.create_element("div", Some(NodeId(0)));
+    /// channel.create_element("p", None);
+    /// // insert the <p> element before the <div> element
+    /// channel.insert_nodes_before(MaybeId::Node(NodeId(0)), &[MaybeId::LastNode]);
+    /// channel.flush();
+    /// ```
+    pub fn insert_nodes_before(&mut self, root: MaybeId, nodes: &[MaybeId]) {
+        self.batch.insert_nodes_before(root, nodes)
     }
 
     /// Remove a node from the DOM.
@@ -218,7 +263,7 @@ impl MsgChannel {
     /// // create a text node with the text "Hello World"
     /// channel.create_text_node("Hello World", None);
     /// channel.flush();
-    pub fn create_text_node(&mut self, text: impl WritableText, id: MaybeId) {
+    pub fn create_text_node(&mut self, text: impl WritableText, id: Option<NodeId>) {
         self.batch.create_text_node(text, id)
     }
 
