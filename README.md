@@ -19,17 +19,17 @@
   </a>
 </div>
 
-**Breaking the WASM<->JS peformance boundry one brick at a time**
+**Breaking the WASM<->JS performance boundary one brick at a time**
 ### Status: There are some holes in the wall.
 
 # What is Sledgehammer?
-Sledgehammer provides faster rust bindings for dom manipuations by batching calls to js.
+Sledgehammer provides faster rust bindings for dom manipulations by batching calls to js.
 
 # Benchmarks
 
-- js-framework-benchmark that trust the implementation and only measures dom operation time (not paint time):
+- js-framework-benchmark that trusts the implementation and only measures dom operation time (not paint time):
 https://demonthos.github.io/wasm_bindgen_sledgehammer/
-This gives more consistant results than the official js-framework-benchmark because it excludes the variation in paint time. Because sledgehammer and wasm-bindgen implementations result in the same dom calls they should have the same paint time.
+This gives more consistent results than the official js-framework-benchmark because it excludes the variation in paint time. Because sledgehammer and wasm-bindgen implementations result in the same dom calls, they should have the same paint time.
 
 - A few runs of [a fork of the js-framework-benchmark:](https://github.com/demonthos/js-framework-benchmark/tree/testing)
 <div align="center">
@@ -39,27 +39,27 @@ This gives more consistant results than the official js-framework-benchmark beca
 </div>
 
 # How does this compare to wasm-bindgen/web-sys:
-wasm-bindgen is a lot more general, and ergonomic to use than sledgehammer. It has bindings to a lot of apis that sledgehammer does not. For most users wasm-bindgen is a beter choice. Sledgehammer is specifically designed for web frameworks that want low level, fast access to the dom.
+wasm-bindgen is a lot more general, and ergonomic to use than sledgehammer. It has bindings to a lot of apis that sledgehammer does not. For most users wasm-bindgen is a beter choice. Sledgehammer is specifically designed for web frameworks that want low-level, fast access to the dom.
 
 # Why is it fast?
 
 ## String decoding
 
-- Decoding strings are expensive to decode, but the cost doesn't change much with the size of the string. Wasm-bindgen calls TextDecoder.decode for every string. Sledehammer only calls TextEncoder.decode once per batch.
+- Decoding strings are expensive to decode, but the cost doesn't change much with the size of the string. Wasm-bindgen calls TextDecoder.decode for every string. Sledgehammer only calls TextEncoder.decode once per batch.
 
-- If the string is small it is faster to decode the string in javascript to avoid the constant overhead of TextDecoder.decode
+- If the string is small, it is faster to decode the string in javascript to avoid the constant overhead of TextDecoder.decode
 
 - See this benchmark: https://jsbench.me/4vl97c05lb/5
 
 ## Single byte attributes and elements
 
-- In addition to making string decoding cheaper, sledehammer also uses less strings. All elements and attribute names are encoded as a single byte instead of a string and then turned back into a string in the javascipt intepreter.
+- In addition to making string decoding cheaper, sledgehammer also uses fewer strings. All elements and attribute names are encoded as a single byte instead of a string and then turned back into a string in the javascript interpreter.
 
-- To allow for custom elements and attributes, you can pass in a &str instead of a Attribute or Element enum.
+- To allow for custom elements and attributes, you can pass in a &str instead of an Attribute or Element enum.
 
 ## Byte encoded operations
 
-- In sledehammer every operation is encoded as a sequence of bytes packed into an array. Every operation takes 1 byte plus whatever data is required for it.
+- In sledgehammer every operation is encoded as a sequence of bytes packed into an array. Every operation takes 1 byte plus whatever data is required for it.
 
 - Booleans are encoded as part of the operation byte to reduce the number of bytes read.
 
