@@ -9,8 +9,8 @@ use web_sys::Node;
 
 use crate::{
     batch::{Batch, Op, PreparedBatch},
-    last_needs_memory, update_last_memory, work_last_created, ElementBuilder, IntoAttribue,
-    IntoElement, JsInterpreter, MSG_METADATA_PTR, MSG_PTR_PTR, STR_LEN_PTR, STR_PTR_PTR,
+    update_last_memory, work_last_created, ElementBuilder, IntoAttribue, IntoElement,
+    JsInterpreter, MSG_METADATA_PTR, MSG_PTR_PTR, STR_LEN_PTR, STR_PTR_PTR,
 };
 
 /// Tracks if a interpreter has been created. Used to prevent multiple interpreters from being created.
@@ -45,6 +45,7 @@ pub struct NodeId(pub u32);
 /// There should only be one [`MsgChannel`] per application.
 pub struct MsgChannel {
     pub(crate) js_interpreter: JsInterpreter,
+    last_mem_size: usize,
     batch: Batch,
 }
 
@@ -76,6 +77,7 @@ impl Default for MsgChannel {
 
         Self {
             js_interpreter,
+            last_mem_size: 0,
             batch: Batch::default(),
         }
     }
@@ -128,7 +130,11 @@ impl MsgChannel {
     /// ```
     pub fn flush(&mut self) {
         self.batch.encode_op(Op::Stop);
-        run_batch(&self.batch.msg, &self.batch.str_buf);
+        run_batch(
+            &self.batch.msg,
+            &self.batch.str_buf,
+            &mut self.last_mem_size,
+        );
         self.batch.msg.clear();
         self.batch.current_op_batch_idx = 0;
         self.batch.current_op_byte_idx = 3;
@@ -548,11 +554,11 @@ impl MsgChannel {
     /// channel.run_batch(&batch.finalize());
     /// ```
     pub fn run_batch(&mut self, batch: impl PreparedBatch) {
-        run_batch(batch.msg(), batch.str());
+        run_batch(batch.msg(), batch.str(), &mut self.last_mem_size);
     }
 }
 
-fn run_batch(msg: &[u8], str_buf: &[u8]) {
+fn run_batch(msg: &[u8], str_buf: &[u8], last_mem_size: &mut usize) {
     debug_assert_eq!(0usize.to_le_bytes().len(), 32 / 8);
     let msg_ptr = msg.as_ptr() as usize;
     let str_ptr = str_buf.as_ptr() as usize;
@@ -609,9 +615,16 @@ fn run_batch(msg: &[u8], str_buf: &[u8]) {
             }
         }
     }
-    if last_needs_memory() {
+    let new_mem_size = core::arch::wasm32::memory_size(0);
+    // we need to update the memory if the memory has grown
+    if new_mem_size != *last_mem_size {
+        *last_mem_size = new_mem_size;
         update_last_memory(wasm_bindgen::memory());
     }
+
+    // if last_needs_memory() {
+    //     update_last_memory(wasm_bindgen::memory());
+    // }
     work_last_created();
 }
 

@@ -4,10 +4,6 @@ export function work_last_created() {
     inptr.Work();
 }
 
-export function last_needs_memory() {
-    return !buffer.byteLength;
-}
-
 export function update_last_memory(mem) {
     inptr.UpdateMemory(mem);
 }
