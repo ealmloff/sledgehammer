@@ -34,10 +34,10 @@ impl AnyAttribute<'_, '_> {
 
     pub(crate) fn size_with_u8_discriminant(&self) -> usize {
         match self {
-            AnyAttribute::Attribute(a) => 1,
-            AnyAttribute::InNamespace(a) => 1 + 1 + 2,
-            AnyAttribute::Str(a) => 1 + 2,
-            AnyAttribute::InNamespaceStr(a) => 1 + 2 + 2,
+            AnyAttribute::Attribute(_) => 1,
+            AnyAttribute::InNamespace(_) => 1 + 1 + 2,
+            AnyAttribute::Str(_) => 1 + 2,
+            AnyAttribute::InNamespaceStr(_) => 1 + 2 + 2,
         }
     }
 }
@@ -180,10 +180,35 @@ impl<'a, 'b> From<InNamespace<'a, &'b str>> for AnyAttribute<'a, 'b> {
     }
 }
 
-/// All built-in attributes
-/// These are the attributes can be encoded with a single byte so they are more efficient (but less flexable) than a &str attribute
-#[derive(Copy, Clone)]
-pub enum Attribute {
+macro_rules! attributes {
+    ($($i: ident),*) => {
+        /// All built-in attributes
+        /// These are the attributes can be encoded with a single byte so they are more efficient (but less flexable) than a &str attribute
+        #[derive(Copy, Clone)]
+        pub enum Attribute {
+            $(
+                $i
+            ),*
+        }
+
+        pub struct NotElementError;
+
+        impl std::str::FromStr for Attribute {
+            type Err = NotElementError;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                Ok(match s{
+                    $(
+                        stringify!($i) => Self::$i,
+                    )*
+                    _ => return Err(NotElementError)
+                })
+            }
+        }
+    };
+}
+
+attributes! {
     accept_charset,
     accept,
     accesskey,
@@ -336,5 +361,5 @@ pub enum Attribute {
     usemap,
     value,
     width,
-    wrap,
+    wrap
 }

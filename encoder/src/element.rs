@@ -43,10 +43,10 @@ impl AnyElement<'_, '_> {
 
     pub(crate) fn size(&self) -> usize {
         match self {
-            AnyElement::Element(a) => 1,
-            AnyElement::InNamespace(a) => 1 + 2,
-            AnyElement::Str(a) => 2,
-            AnyElement::InNamespaceStr(a) => 2 + 2,
+            AnyElement::Element(_) => 1,
+            AnyElement::InNamespace(_) => 1 + 2,
+            AnyElement::Str(_) => 2,
+            AnyElement::InNamespaceStr(_) => 2 + 2,
         }
     }
 }
@@ -189,8 +189,8 @@ impl<'a> From<ElementBuilder<'a>> for NodeBuilder<'a> {
 
 /// A builder for an text node with a id, and text
 pub struct TextBuilder<'a> {
-    id: Option<NodeId>,
-    text: &'a str,
+    pub(crate) id: Option<NodeId>,
+    pub(crate) text: &'a str,
 }
 
 impl<'a> TextBuilder<'a> {
@@ -285,7 +285,7 @@ impl<'a> ElementBuilder<'a> {
             + self
                 .attrs
                 .iter()
-                .map(|(k, v)| k.size_with_u8_discriminant() + 2)
+                .map(|(k, _)| k.size_with_u8_discriminant() + 2)
                 .sum::<usize>();
         v.msg.reserve(size);
         unsafe {
@@ -313,11 +313,36 @@ impl<'a> ElementBuilder<'a> {
     }
 }
 
-/// All built-in elements
-/// These are the element can be encoded with a single byte so they are more efficient (but less flexable) than a &str element
-#[allow(unused)]
-#[derive(Copy, Clone)]
-pub enum Element {
+macro_rules! elements {
+    ($($i: ident),*) => {
+        /// All built-in elements
+        /// These are the element can be encoded with a single byte so they are more efficient (but less flexable) than a &str element
+        #[allow(unused)]
+        #[derive(Copy, Clone)]
+        pub enum Element {
+            $(
+                $i
+            ),*
+        }
+
+        pub struct NotElementError;
+
+        impl std::str::FromStr for Element {
+            type Err = NotElementError;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                Ok(match s{
+                    $(
+                        stringify!($i) => Self::$i,
+                    )*
+                    _ => return Err(NotElementError)
+                })
+            }
+        }
+    };
+}
+
+elements! {
     a,
     abbr,
     acronym,
@@ -451,5 +476,5 @@ pub enum Element {
     var,
     video,
     wbr,
-    xmp,
+    xmp
 }

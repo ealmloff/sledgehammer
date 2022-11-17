@@ -1,7 +1,9 @@
-use crate::{channel::MaybeId, ElementBuilder, IntoAttribue, IntoElement, NodeId, WritableText};
+use crate::{
+    ElementBuilder, IntoAttribue, IntoElement, MaybeId, NodeId, TextBuilder, WritableText,
+};
 
 // operations that have no booleans can be encoded as a half byte, these are placed first
-pub(crate) enum Op {
+pub enum Op {
     /// Navigates to the last node to the first child of the current node.
     FirstChild = 0,
 
@@ -128,11 +130,16 @@ impl<'a> PreparedBatch for &'a StaticBatch {
 /// See [`MsgChannel::append`] and [`MsgChannel::run_batch`] for examples.
 /// The methods on this struct are a subset of the methods on [`MsgChannel`] and work the same with the exception of [`Batch::finalize`].
 pub struct Batch {
-    pub(crate) msg: Vec<u8>,
-    pub(crate) str_buf: Vec<u8>,
-    pub(crate) current_op_batch_idx: usize,
-    pub(crate) current_op_byte_idx: usize,
-    pub(crate) current_op_bit_pack_index: u8,
+    #[doc(hidden)]
+    pub msg: Vec<u8>,
+    #[doc(hidden)]
+    pub str_buf: Vec<u8>,
+    #[doc(hidden)]
+    pub current_op_batch_idx: usize,
+    #[doc(hidden)]
+    pub current_op_byte_idx: usize,
+    #[doc(hidden)]
+    pub current_op_bit_pack_index: u8,
 }
 
 impl Default for Batch {
@@ -349,6 +356,11 @@ impl Batch {
         el.encode(self);
     }
 
+    /// Build a text node
+    pub fn build_text_node(&mut self, text: TextBuilder) {
+        self.create_text_node(text.text, text.id)
+    }
+
     /// Set a style property on a node.
     pub fn set_style(&mut self, style: &str, value: &str, id: MaybeId) {
         self.encode_op(Op::SetStyle);
@@ -507,7 +519,8 @@ impl Batch {
     }
 
     #[inline]
-    pub(crate) fn encode_op(&mut self, op: Op) {
+    #[doc(hidden)]
+    pub fn encode_op(&mut self, op: Op) {
         let u8_op = op as u8;
 
         self.current_op_byte_idx += 1;
@@ -545,7 +558,7 @@ impl Batch {
         }
     }
 
-    pub(crate) fn append(&mut self, mut batch: Self) {
+    pub fn append(&mut self, mut batch: Self) {
         // add empty operations to the batch to make sure the batch is aligned
         let operations_left = 3 - (self.current_op_byte_idx - self.current_op_batch_idx);
         for _ in 0..operations_left {

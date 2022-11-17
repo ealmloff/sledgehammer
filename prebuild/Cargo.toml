@@ -19,4 +19,5 @@ proc-macro2 = "1.0.47"
 quote = "1.0.21"
 syn = "1.0.102"
 syn-rsx = "0.9.0"
-sledgehammer = { path = "../sledgehammer" }
+sledgehammer-encoder = { path = "../encoder" }
+bumpalo = "3.11.1"
