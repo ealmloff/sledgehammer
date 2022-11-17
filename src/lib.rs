@@ -139,6 +139,7 @@ extern "C" {
 }
 
 /// Something that lives in a namespace like a tag or attribute
+#[derive(Clone, Copy)]
 pub struct InNamespace<'a, T>(pub T, pub &'a str);
 
 /// Something that can live in a namespace

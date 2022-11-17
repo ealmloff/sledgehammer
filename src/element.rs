@@ -31,6 +31,24 @@ impl AnyElement<'_, '_> {
             AnyElement::InNamespaceStr(a) => a.encode(v),
         }
     }
+
+    pub(crate) unsafe fn encode_prealloc(&self, v: &mut Batch) {
+        match self {
+            AnyElement::Element(a) => a.encode_prealloc(v),
+            AnyElement::InNamespace(a) => a.encode_prealloc(v),
+            AnyElement::Str(a) => a.encode_prealloc(v),
+            AnyElement::InNamespaceStr(a) => a.encode_prealloc(v),
+        }
+    }
+
+    pub(crate) fn size(&self) -> usize {
+        match self {
+            AnyElement::Element(a) => 1,
+            AnyElement::InNamespace(a) => 1 + 2,
+            AnyElement::Str(a) => 2,
+            AnyElement::InNamespaceStr(a) => 2 + 2,
+        }
+    }
 }
 
 /// Anything that can be turned into an element name
@@ -259,22 +277,35 @@ impl<'a> ElementBuilder<'a> {
 
     /// Encode the element into the a batch
     pub(crate) fn encode(&self, v: &mut Batch) {
-        match self.id {
-            Some(id) => {
-                v.msg.push(1);
-                v.encode_id(id);
+        let size = 1
+            + (self.id.is_some() as usize) * 4
+            + self.kind.size()
+            + 1
+            + 1
+            + self
+                .attrs
+                .iter()
+                .map(|(k, v)| k.size_with_u8_discriminant() + 2)
+                .sum::<usize>();
+        v.msg.reserve(size);
+        unsafe {
+            match self.id {
+                Some(id) => {
+                    v.encode_u8_prealloc(1);
+                    v.encode_id_prealloc(id);
+                }
+                None => {
+                    v.encode_u8_prealloc(0);
+                }
             }
-            None => {
-                v.msg.push(0);
+            self.kind.encode_prealloc(v);
+            // these are packed together so they can be read as a u16
+            v.encode_u8_prealloc(self.attrs.len() as u8);
+            v.encode_u8_prealloc(self.children.len() as u8);
+            for (attr, value) in self.attrs {
+                attr.encode_u8_discriminant_prealloc(v);
+                v.encode_str_prealloc(*value);
             }
-        }
-        self.kind.encode(v);
-        // these are packed together so they can be read as a u16
-        v.msg.push(self.attrs.len() as u8);
-        v.msg.push(self.children.len() as u8);
-        for (attr, value) in self.attrs {
-            attr.encode_u8_discriminant(v);
-            v.encode_str(*value);
         }
         for child in self.children {
             child.encode(v);

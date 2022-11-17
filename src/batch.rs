@@ -471,6 +471,17 @@ impl Batch {
         }
     }
 
+    #[inline(always)]
+    pub(crate) fn encode_u8_prealloc(&mut self, val: u8) {
+        let le = val.to_le();
+        #[allow(clippy::uninit_vec)]
+        unsafe {
+            let len = self.msg.len();
+            self.msg.as_mut_ptr().add(len).write(le);
+            self.msg.set_len(len + 1);
+        }
+    }
+
     #[inline]
     pub(crate) fn encode_str(&mut self, string: impl WritableText) {
         let prev_len = self.str_buf.len();

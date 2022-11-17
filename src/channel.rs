@@ -17,7 +17,7 @@ use crate::{
 static mut INTERPRETER_EXISTS: bool = false;
 
 /// An id that may be either the last node or a node with an assigned id.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MaybeId {
     /// The last node that was created or navigated to.
     LastNode,
@@ -37,7 +37,7 @@ impl MaybeId {
 
 /// A node that was created and stored with an id
 /// It is recommended to create and store ids with a slab allocator with an exposed slab index for example the excellent [slab](https://docs.rs/slab) crate.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeId(pub u32);
 
 /// The [`MsgChannel`] handles communication with the dom. It allows you to send batched operations to the dom.
@@ -52,19 +52,19 @@ pub struct MsgChannel {
 impl Default for MsgChannel {
     fn default() -> Self {
         unsafe {
-            assert!(
+            debug_assert!(
                 !INTERPRETER_EXISTS,
                 "Found another MsgChannel. Only one MsgChannel can be created"
             );
             INTERPRETER_EXISTS = true;
         }
         debug_assert!(0x1F > Op::NoOp as u8);
-        format!(
-            "init: {:?}, {:?}, {:?}",
-            unsafe { MSG_PTR_PTR as usize },
-            unsafe { STR_PTR_PTR as usize },
-            unsafe { STR_LEN_PTR as usize }
-        );
+        // format!(
+        //     "init: {:?}, {:?}, {:?}",
+        //     unsafe { MSG_PTR_PTR as usize },
+        //     unsafe { STR_PTR_PTR as usize },
+        //     unsafe { STR_LEN_PTR as usize }
+        // );
         let js_interpreter = unsafe {
             JsInterpreter::new(
                 wasm_bindgen::memory(),
