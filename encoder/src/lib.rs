@@ -5,7 +5,7 @@ pub mod element;
 use std::{fmt::Arguments, io::Write};
 
 pub use attribute::{Attribute, IntoAttribue};
-pub use batch::Op;
+pub use batch::{Op, StaticBatch};
 pub use element::{Element, ElementBuilder, IntoElement, NodeBuilder, TextBuilder};
 
 /// Something that lives in a namespace like a tag or attribute

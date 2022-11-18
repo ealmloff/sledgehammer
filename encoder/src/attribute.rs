@@ -51,6 +51,7 @@ pub trait IntoAttribue<'a, 'b>: Sealed + Into<AnyAttribute<'a, 'b>> {
     fn encode(self, v: &mut Batch);
 
     /// Encode the attribute into the message channel with memory pre-allocated
+    ///
     /// # Safety
     ///
     /// This is only safe if the batch is preallocated to the correct size
@@ -62,6 +63,10 @@ pub trait IntoAttribue<'a, 'b>: Sealed + Into<AnyAttribute<'a, 'b>> {
     }
 
     /// Encode the attribute into the message channel with a u8 desciminant instead of bit packed bools
+    ///
+    /// # Safety
+    ///
+    /// This is only safe if the batch is preallocated to the correct size
     unsafe fn encode_u8_discriminant_prealloc(self, v: &mut Batch);
 }
 

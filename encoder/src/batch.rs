@@ -543,7 +543,6 @@ impl Batch {
         self.current_op_bit_pack_index = 0;
     }
 
-    #[inline]
     pub(crate) fn encode_bool(&mut self, value: bool) {
         if self.current_op_bit_pack_index < 3 {
             if value {

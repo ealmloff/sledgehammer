@@ -7,7 +7,7 @@ use sledgehammer_encoder::{
     attribute::AnyAttribute,
     batch::{Batch, FinalizedBatch},
     element::AnyElement,
-    Attribute, Element, ElementBuilder, NodeBuilder, TextBuilder,
+    Attribute, Element, ElementBuilder, NodeBuilder, NodeId, TextBuilder,
 };
 use syn::{Expr, Lit};
 use syn_rsx::{parse, Node, NodeType};
@@ -23,10 +23,10 @@ struct ElementInProgress {
     children: Vec<NodeInProgress>,
 }
 
-fn walk_nodes<'a>(nodes: &'a Vec<Node>, inside: &mut Option<ElementInProgress>) {
+fn walk_nodes(nodes: &Vec<Node>, inside: &mut Option<ElementInProgress>) {
     for node in nodes {
         match node {
-            Node::Doctype(doctype) => {}
+            Node::Doctype(_) => {}
             Node::Element(element) => {
                 let name = element.name.to_string();
 
@@ -119,8 +119,8 @@ pub fn html(tokens: TokenStream) -> TokenStream {
                     let str = &finalized.str;
                     quote! {
                         StaticBatch{
-                            msg: &[$($msg),*],
-                            str: &[$(str),*]
+                            msg: &[#(#msg,)*],
+                            str: &[#(#str,)*]
                         }
                     }
                 }
@@ -147,19 +147,28 @@ fn build_in_progress<'a>(allocator: &'a Bump, node: &'a NodeInProgress) -> NodeB
                 .map(|node| build_in_progress(allocator, node))
                 .collect();
             builder = builder.children(allocator.alloc(children));
+            let mut id = None;
             let attributes: Vec<(AnyAttribute<'_, '_>, &str)> = el
                 .attributes
                 .iter()
-                .map(|(attr, value)| {
-                    (
-                        match Attribute::from_str(attr) {
-                            Ok(a) => AnyAttribute::Attribute(a),
-                            Err(_) => AnyAttribute::Str(attr),
-                        },
-                        &*allocator.alloc_str(&value),
-                    )
+                .filter_map(|(attr, value)| {
+                    if attr == "sledgehammer-id" {
+                        id = Some(value.parse().unwrap());
+                        None
+                    } else {
+                        Some((
+                            match Attribute::from_str(attr) {
+                                Ok(a) => AnyAttribute::Attribute(a),
+                                Err(_) => AnyAttribute::Str(attr),
+                            },
+                            &*allocator.alloc_str(value),
+                        ))
+                    }
                 })
                 .collect();
+            if let Some(id) = id {
+                builder = builder.id(NodeId(id));
+            }
             builder = builder.attrs(allocator.alloc(attributes));
             NodeBuilder::Element(builder)
         }

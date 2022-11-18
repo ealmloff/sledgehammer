@@ -614,8 +614,5 @@ fn run_batch(msg: &[u8], str_buf: &[u8], last_mem_size: &mut usize) {
         update_last_memory(wasm_bindgen::memory());
     }
 
-    // if last_needs_memory() {
-    //     update_last_memory(wasm_bindgen::memory());
-    // }
     work_last_created();
 }
