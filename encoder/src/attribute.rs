@@ -14,6 +14,7 @@ mod sealed {
     impl<'a, 'b> Sealed for InNamespace<'b, &'a str> {}
 }
 
+#[derive(Clone, Copy)]
 pub enum AnyAttribute<'a, 'b> {
     Attribute(Attribute),
     InNamespace(InNamespace<'a, Attribute>),
@@ -22,12 +23,21 @@ pub enum AnyAttribute<'a, 'b> {
 }
 
 impl AnyAttribute<'_, '_> {
-    pub fn encode_u8_discriminant(&self, v: &mut Batch) {
+    pub(crate) unsafe fn encode_u8_discriminant_prealloc(self, v: &mut Batch) {
         match self {
-            AnyAttribute::Attribute(a) => a.encode_u8_discriminant(v),
-            AnyAttribute::InNamespace(a) => a.encode_u8_discriminant(v),
-            AnyAttribute::Str(a) => a.encode_u8_discriminant(v),
-            AnyAttribute::InNamespaceStr(a) => a.encode_u8_discriminant(v),
+            AnyAttribute::Attribute(a) => a.encode_u8_discriminant_prealloc(v),
+            AnyAttribute::InNamespace(a) => a.encode_u8_discriminant_prealloc(v),
+            AnyAttribute::Str(a) => a.encode_u8_discriminant_prealloc(v),
+            AnyAttribute::InNamespaceStr(a) => a.encode_u8_discriminant_prealloc(v),
+        }
+    }
+
+    pub(crate) fn size_with_u8_discriminant(&self) -> usize {
+        match self {
+            AnyAttribute::Attribute(_) => 1,
+            AnyAttribute::InNamespace(_) => 1 + 1 + 2,
+            AnyAttribute::Str(_) => 1 + 2,
+            AnyAttribute::InNamespaceStr(_) => 1 + 2 + 2,
         }
     }
 }
@@ -41,6 +51,7 @@ pub trait IntoAttribue<'a, 'b>: Sealed + Into<AnyAttribute<'a, 'b>> {
     fn encode(self, v: &mut Batch);
 
     /// Encode the attribute into the message channel with memory pre-allocated
+    ///
     /// # Safety
     ///
     /// This is only safe if the batch is preallocated to the correct size
@@ -52,7 +63,11 @@ pub trait IntoAttribue<'a, 'b>: Sealed + Into<AnyAttribute<'a, 'b>> {
     }
 
     /// Encode the attribute into the message channel with a u8 desciminant instead of bit packed bools
-    fn encode_u8_discriminant(&self, v: &mut Batch);
+    ///
+    /// # Safety
+    ///
+    /// This is only safe if the batch is preallocated to the correct size
+    unsafe fn encode_u8_discriminant_prealloc(self, v: &mut Batch);
 }
 
 impl<'a, 'b> Attribute {
@@ -83,8 +98,9 @@ impl<'a, 'b> IntoAttribue<'a, 'b> for Attribute {
         }
     }
 
-    fn encode_u8_discriminant(&self, v: &mut Batch) {
-        v.msg.push(*self as u8)
+    #[inline(always)]
+    unsafe fn encode_u8_discriminant_prealloc(self, v: &mut Batch) {
+        v.encode_u8_prealloc(self as u8)
     }
 }
 
@@ -101,6 +117,7 @@ impl<'a, 'b> InNamespace<'a, Attribute> {
 }
 
 impl<'a, 'b> IntoAttribue<'a, 'b> for InNamespace<'a, Attribute> {
+    #[inline(always)]
     fn encode(self, v: &mut Batch) {
         v.encode_bool(false);
         v.msg.push(self.0 as u8);
@@ -108,10 +125,11 @@ impl<'a, 'b> IntoAttribue<'a, 'b> for InNamespace<'a, Attribute> {
         v.encode_str(self.1);
     }
 
-    fn encode_u8_discriminant(&self, v: &mut Batch) {
-        v.msg.push(255);
-        v.msg.push(self.0 as u8);
-        v.encode_str(self.1);
+    #[inline(always)]
+    unsafe fn encode_u8_discriminant_prealloc(self, v: &mut Batch) {
+        v.encode_u8_prealloc(255);
+        v.encode_u8_prealloc(self.0 as u8);
+        v.encode_str_prealloc(self.1);
     }
 }
 
@@ -128,9 +146,9 @@ impl<'a, 'b> IntoAttribue<'a, 'b> for &'a str {
         v.encode_bool(false);
     }
 
-    fn encode_u8_discriminant(&self, v: &mut Batch) {
-        v.msg.push(254);
-        v.encode_cachable_str(*self);
+    unsafe fn encode_u8_discriminant_prealloc(self, v: &mut Batch) {
+        v.encode_u8_prealloc(254);
+        v.encode_str_prealloc(self);
     }
 }
 
@@ -154,10 +172,10 @@ impl<'a, 'b> IntoAttribue<'a, 'b> for InNamespace<'a, &'b str> {
         v.encode_cachable_str(self.1);
     }
 
-    fn encode_u8_discriminant(&self, v: &mut Batch) {
-        v.msg.push(253);
-        v.encode_cachable_str(self.0);
-        v.encode_cachable_str(self.1);
+    unsafe fn encode_u8_discriminant_prealloc(self, v: &mut Batch) {
+        v.encode_u8_prealloc(253);
+        v.encode_str_prealloc(self.0);
+        v.encode_str_prealloc(self.1);
     }
 }
 
@@ -167,10 +185,35 @@ impl<'a, 'b> From<InNamespace<'a, &'b str>> for AnyAttribute<'a, 'b> {
     }
 }
 
-/// All built-in attributes
-/// These are the attributes can be encoded with a single byte so they are more efficient (but less flexable) than a &str attribute
-#[derive(Copy, Clone)]
-pub enum Attribute {
+macro_rules! attributes {
+    ($($i: ident),*) => {
+        /// All built-in attributes
+        /// These are the attributes can be encoded with a single byte so they are more efficient (but less flexable) than a &str attribute
+        #[derive(Copy, Clone)]
+        pub enum Attribute {
+            $(
+                $i
+            ),*
+        }
+
+        pub struct NotElementError;
+
+        impl std::str::FromStr for Attribute {
+            type Err = NotElementError;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                Ok(match s{
+                    $(
+                        stringify!($i) => Self::$i,
+                    )*
+                    _ => return Err(NotElementError)
+                })
+            }
+        }
+    };
+}
+
+attributes! {
     accept_charset,
     accept,
     accesskey,
@@ -323,5 +366,5 @@ pub enum Attribute {
     usemap,
     value,
     width,
-    wrap,
+    wrap
 }
