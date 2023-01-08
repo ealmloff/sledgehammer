@@ -31,11 +31,9 @@ Sledgehammer provides faster rust bindings for dom manipulations by batching cal
 https://demonthos.github.io/wasm_bindgen_sledgehammer/
 This gives more consistent results than the official js-framework-benchmark because it excludes the variation in paint time. Because sledgehammer and wasm-bindgen implementations result in the same dom calls, they should have the same paint time.
 
-- A few runs of [a fork of the js-framework-benchmark:](https://github.com/demonthos/js-framework-benchmark/tree/testing)
+- The official js-framework-benchmark results
 <div align="center">
-  <img src="https://user-images.githubusercontent.com/66571940/199780394-a360581f-1496-4894-b7fe-3d5b5d627dbb.png" />
-  <img src="https://user-images.githubusercontent.com/66571940/199780395-d7d00059-052e-40b7-9514-aba55800dc04.png" />
-  <img src="https://user-images.githubusercontent.com/66571940/199780398-0060a62b-4d93-4a40-94a2-980835393aa2.png" />
+  <img src="https://user-images.githubusercontent.com/66571940/211176289-e3c5dbbd-9ad4-4666-b09e-35780bca7229.png" />
 </div>
 
 # How does this compare to wasm-bindgen/web-sys:
