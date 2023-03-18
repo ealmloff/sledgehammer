@@ -19,6 +19,8 @@
   </a>
 </div>
 
+# For more customization options, use [Sledgehammer Bindgen](https://github.com/Demonthos/sledgehammer_bindgen)
+
 **Breaking the WASM<->JS performance boundary one brick at a time**
 ### Status: There are some holes in the wall.
 
