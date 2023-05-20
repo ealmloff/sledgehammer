@@ -19,7 +19,7 @@
   </a>
 </div>
 
-# For more customization options, use [Sledgehammer Bindgen](https://github.com/Demonthos/sledgehammer_bindgen)
+# Development of this library has stoped in favor of [Sledgehammer Bindgen](https://github.com/Demonthos/sledgehammer_bindgen) which is a generalized version of this concept that works with non-DOM focused instruction sets.
 
 **Breaking the WASM<->JS performance boundary one brick at a time**
 ### Status: There are some holes in the wall.
